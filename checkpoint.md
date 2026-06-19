@@ -31,3 +31,8 @@ This document tracks our progress through the phases of building the SPG Attenda
 
 - **[x] Phase 7: Sales Screen**
   - Create placeholder for Sales Screen ("Coming Soon").
+
+- **[x] Phase 8: UI Redesign & Localization**
+  - Redesign interface with a Sleek Dark Mode / Light Mode toggle.
+  - Implement dynamic time-based greeting logic.
+  - Implement global ENG/IND language localization.

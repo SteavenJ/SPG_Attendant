@@ -24,7 +24,7 @@ class LocationService {
     } 
 
     Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high);
+        desiredAccuracy: LocationAccuracy.high, timeLimit: const Duration(seconds: 15));
         
     try {
       List<Placemark> placemarks = await placemarkFromCoordinates(

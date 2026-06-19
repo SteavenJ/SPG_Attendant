@@ -23,10 +23,13 @@ void main() {
     when(() => mockLocationService.getCurrentAddress())
         .thenAnswer((_) async => '123 Fake St (Lat: 0.0, Lng: 0.0)');
     
-    when(() => mockStorageService.getWeeklyHours())
+    when(() => mockStorageService.getWeeklyHours(any()))
         .thenAnswer((_) async => {1: 8.0, 2: 8.0});
 
-    when(() => mockStorageService.saveEvent(any(), any()))
+    when(() => mockStorageService.getClockStateToday(any()))
+        .thenAnswer((_) async => 'Clock In');
+
+    when(() => mockStorageService.saveEvent(any(), any(), any()))
         .thenAnswer((_) async {});
   });
 
@@ -42,19 +45,16 @@ void main() {
 
   testWidgets('renders attendance screen with all components and graph', (WidgetTester tester) async {
     await tester.pumpWidget(createWidgetUnderTest());
-    await tester.pumpAndSettle(); // Wait for location fetch
+    await tester.pumpAndSettle();
 
-    // Verify Title
-    expect(find.text('SPG Attendance'), findsOneWidget);
-
-    // Verify Graph
-    expect(find.text('Weekly Hours'), findsOneWidget);
-
-    // Verify Location is displayed
+    expect(find.text('SPG Attendant'), findsOneWidget);
+    expect(find.text('Weekly Summary'), findsOneWidget);
     expect(find.text('123 Fake St (Lat: 0.0, Lng: 0.0)'), findsOneWidget);
-
-    // Verify Employee ID input exists
     expect(find.byType(TextField), findsOneWidget);
+    
+    // Only Clock In should be visible initially
+    expect(find.text('CLOCK IN'), findsOneWidget);
+    expect(find.text('CLOCK OUT'), findsNothing);
   });
 
   testWidgets('pressing Clock In sends data to ApiService and saves to Storage', (WidgetTester tester) async {
@@ -68,15 +68,16 @@ void main() {
     await tester.pumpWidget(createWidgetUnderTest());
     await tester.pumpAndSettle();
 
-    // Enter Employee ID
     await tester.enterText(find.byType(TextField), 'EMP-123');
-    
-    // Tap Clock In
-    await tester.tap(find.text('Clock In'));
-    await tester.pump(); // Start loading
-    await tester.pumpAndSettle(); // Finish loading
+    await tester.pumpAndSettle();
 
-    // Verify API called
+    await tester.ensureVisible(find.text('CLOCK IN'));
+    await tester.pumpAndSettle();
+    
+    await tester.tap(find.text('CLOCK IN'), warnIfMissed: false);
+    await tester.pump(); 
+    await tester.pumpAndSettle(); 
+
     verify(() => mockApiService.recordAttendance(
       timestamp: any(named: 'timestamp'),
       employeeId: 'EMP-123',
@@ -84,10 +85,8 @@ void main() {
       address: '123 Fake St (Lat: 0.0, Lng: 0.0)',
     )).called(1);
     
-    // Verify Storage called
-    verify(() => mockStorageService.saveEvent(any(), 'Clock In')).called(1);
+    verify(() => mockStorageService.saveEvent(any(), 'EMP-123', 'Clock In')).called(1);
 
-    // Verify success snackbar
     expect(find.text('Attendance recorded!'), findsOneWidget);
   });
 }
