@@ -3,15 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:spg_attendant/services/api_service.dart';
 import 'package:spg_attendant/services/location_service.dart';
+import 'package:spg_attendant/services/storage_service.dart';
+import 'package:spg_attendant/widgets/attendance_graph.dart';
 
 class AttendanceScreen extends StatefulWidget {
   final ApiService apiService;
   final LocationService locationService;
+  final StorageService storageService;
 
   const AttendanceScreen({
     Key? key,
     required this.apiService,
     required this.locationService,
+    required this.storageService,
   }) : super(key: key);
 
   @override
@@ -24,6 +28,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   final TextEditingController _employeeIdController = TextEditingController();
   Timer? _timer;
   bool _isLoading = false;
+  Map<int, double> _weeklyHours = {};
 
   @override
   void initState() {
@@ -33,6 +38,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       _updateTime();
     });
     _fetchLocation();
+    _loadGraphData();
   }
 
   void _updateTime() {
@@ -45,6 +51,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final address = await widget.locationService.getCurrentAddress();
     setState(() {
       _currentAddress = address;
+    });
+  }
+
+  Future<void> _loadGraphData() async {
+    final hours = await widget.storageService.getWeeklyHours();
+    setState(() {
+      _weeklyHours = hours;
     });
   }
 
@@ -74,6 +87,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       address: _currentAddress,
     );
 
+    if (success) {
+      await widget.storageService.saveEvent(_currentTime, type);
+      await _loadGraphData();
+    }
+
     setState(() {
       _isLoading = false;
     });
@@ -98,88 +116,91 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         backgroundColor: Colors.blueAccent,
       ),
       body: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
+        padding: const EdgeInsets.all(16.0),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Card(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      const Text('Current Time', style: TextStyle(color: Colors.grey)),
+                      const SizedBox(height: 8),
+                      Text(
+                        _currentTime,
+                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.location_on, color: Colors.red, size: 32),
+                      const SizedBox(height: 8),
+                      Text(
+                        _currentAddress,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                      TextButton(
+                        onPressed: _fetchLocation,
+                        child: const Text('Refresh Location'),
+                      )
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _employeeIdController,
+                decoration: const InputDecoration(
+                  labelText: 'Employee ID',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.badge),
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (_isLoading)
+                const Center(child: CircularProgressIndicator())
+              else
+                Row(
                   children: [
-                    const Text('Current Time', style: TextStyle(color: Colors.grey)),
-                    const SizedBox(height: 8),
-                    Text(
-                      _currentTime,
-                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        onPressed: () => _handleClock('Clock In'),
+                        child: const Text('Clock In', style: TextStyle(fontSize: 18, color: Colors.white)),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        onPressed: () => _handleClock('Clock Out'),
+                        child: const Text('Clock Out', style: TextStyle(fontSize: 18, color: Colors.white)),
+                      ),
                     ),
                   ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    const Icon(Icons.location_on, color: Colors.red, size: 32),
-                    const SizedBox(height: 8),
-                    Text(
-                      _currentAddress,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 16),
-                    ),
-                    TextButton(
-                      onPressed: _fetchLocation,
-                      child: const Text('Refresh Location'),
-                    )
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            TextField(
-              controller: _employeeIdController,
-              decoration: const InputDecoration(
-                labelText: 'Employee ID',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.badge),
-              ),
-            ),
-            const Spacer(),
-            if (_isLoading)
-              const Center(child: CircularProgressIndicator())
-            else
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      onPressed: () => _handleClock('Clock In'),
-                      child: const Text('Clock In', style: TextStyle(fontSize: 18, color: Colors.white)),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      onPressed: () => _handleClock('Clock Out'),
-                      child: const Text('Clock Out', style: TextStyle(fontSize: 18, color: Colors.white)),
-                    ),
-                  ),
-                ],
-              ),
-            const SizedBox(height: 24),
-          ],
+              const SizedBox(height: 24),
+              if (_weeklyHours.isNotEmpty) AttendanceGraph(weeklyHours: _weeklyHours),
+            ],
+          ),
         ),
       ),
     );
