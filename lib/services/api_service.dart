@@ -29,7 +29,7 @@ class ApiService {
       final responses = await Future.wait(
         scriptUrls.map((url) => client.post(
               Uri.parse(url),
-              headers: {'Content-Type': 'application/json'},
+              headers: {'Content-Type': 'text/plain'},
               body: body,
             )),
       );
