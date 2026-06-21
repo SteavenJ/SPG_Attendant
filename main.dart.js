@@ -84709,7 +84709,7 @@ case 2:return A.K(o.at(-1),r)}})
 return A.M($async$zT,r)}}
 A.YK.prototype={
 $1(a){var s=t.N
-return this.a.a.rT("POST",A.h8(a,0,null),A.ah(["Content-Type","application/json"],s,s),this.b,null)},
+return this.a.a.rT("POST",A.h8(a,0,null),A.ah(["Content-Type","text/plain"],s,s),this.b,null)},
 $S:533}
 A.YL.prototype={
 $1(a){var s=a.b
