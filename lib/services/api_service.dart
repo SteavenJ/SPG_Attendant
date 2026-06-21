@@ -7,8 +7,8 @@ class ApiService {
   ApiService({http.Client? client}) : client = client ?? http.Client();
   
   static const List<String> scriptUrls = [
-    'https://script.google.com/macros/s/AKfycbwrTWRTAgn0yIr02fMOdHlXeutTs99VEcB2mP-bmEWcRJqGxUI3al73HayxG5F8YVIFWg/exec', // Testing Link
-    'https://script.google.com/macros/s/AKfycbzczkV_PmVmnrAAdXxbQGP5Ymxe70tt8hQOBbLnL8it584vP4IMJruIelFsaRo2siE/exec'  // Final Link
+    'Place Your Link In Here', // Testing Link
+    'Place Your Link In Here'  // Final Link
   ];
 
   Future<bool> recordAttendance({
