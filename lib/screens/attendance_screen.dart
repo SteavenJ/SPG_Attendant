@@ -7,6 +7,7 @@ import 'package:spg_attendant/services/api_service.dart';
 import 'package:spg_attendant/services/location_service.dart';
 import 'package:spg_attendant/services/storage_service.dart';
 import 'package:spg_attendant/widgets/attendance_graph.dart';
+import 'package:ntp/ntp.dart';
 
 class AttendanceScreen extends StatefulWidget {
   final ApiService apiService;
@@ -33,10 +34,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   bool _isLoading = false;
   Map<int, double> _weeklyHours = {};
   String _clockState = 'Clock In';
+  Duration _timeOffset = Duration.zero;
 
   @override
   void initState() {
     super.initState();
+    _syncNetworkTime();
     _updateTime();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       _updateTime();
@@ -45,8 +48,22 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     _onEmployeeIdChanged();
   }
 
+  Future<void> _syncNetworkTime() async {
+    try {
+      DateTime deviceTime = DateTime.now();
+      DateTime networkTime = await NTP.now();
+      if (mounted) {
+        setState(() {
+          _timeOffset = networkTime.difference(deviceTime);
+        });
+      }
+    } catch (e) {
+      // Fallback to device time if network fails
+    }
+  }
+
   void _updateTime() {
-    DateTime now = DateTime.now();
+    DateTime now = DateTime.now().add(_timeOffset);
     if (mounted) {
       setState(() {
         _currentTime = DateFormat('yyyy-MM-dd HH:mm:ss').format(now);
