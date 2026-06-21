@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:intl/intl.dart';
 import 'package:spg_attendant/main.dart';
@@ -337,6 +338,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           ),
           child: TextField(
             controller: _employeeIdController,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             onChanged: (value) => _onEmployeeIdChanged(),
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor),
             decoration: InputDecoration(
