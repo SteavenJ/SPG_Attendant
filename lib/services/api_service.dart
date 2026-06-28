@@ -11,6 +11,26 @@ class ApiService {
     'Place Your Link In Here'  // Final Link
   ];
 
+  static Map<String, String>? _promotorCache;
+
+  Future<Map<String, String>> fetchPromotorNames() async {
+    if (_promotorCache != null) {
+      return _promotorCache!;
+    }
+    try {
+      // Using the Final Link for fetching data
+      final response = await client.get(Uri.parse(scriptUrls[1]));
+      if (response.statusCode == 200 || response.statusCode == 302) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        _promotorCache = data.map((key, value) => MapEntry(key, value.toString()));
+        return _promotorCache!;
+      }
+    } catch (e) {
+      // Return empty map on error
+    }
+    return {};
+  }
+
   Future<bool> recordAttendance({
     required String timestamp,
     required String employeeId,

@@ -36,6 +36,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   Map<int, double> _weeklyHours = {};
   String _clockState = 'Clock In';
   Duration _timeOffset = Duration.zero;
+  Map<String, String> _promotorNames = {};
 
   @override
   void initState() {
@@ -46,7 +47,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       _updateTime();
     });
     _fetchLocation();
+    _fetchPromotors();
     _onEmployeeIdChanged();
+  }
+
+  Future<void> _fetchPromotors() async {
+    final names = await widget.apiService.fetchPromotorNames();
+    if (mounted) {
+      setState(() {
+        _promotorNames = names;
+      });
+    }
   }
 
   Future<void> _syncNetworkTime() async {
@@ -138,6 +149,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (empId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(_t('Please enter an Employee ID'))),
+      );
+      return;
+    }
+
+    if (_promotorNames.isNotEmpty && !_promotorNames.containsKey(empId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ID Tidak Ditemukan!')),
       );
       return;
     }
@@ -322,6 +340,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   Widget _buildInputField(Color cardColor, Color textColor, Color subTextColor) {
     bool isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    String empId = _employeeIdController.text.trim();
+    String? promotorName = empId.isEmpty ? null : _promotorNames[empId];
+    bool isInvalid = empId.isNotEmpty && promotorName == null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -353,6 +375,20 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             ),
           ),
         ),
+        if (empId.isNotEmpty && _promotorNames.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              isInvalid ? "ID Tidak Ditemukan!" : promotorName!,
+              style: TextStyle(
+                color: isInvalid ? Colors.red : (isDark ? Colors.greenAccent : Colors.green.shade700),
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+              ),
+            ),
+          ),
+        ]
       ],
     );
   }
