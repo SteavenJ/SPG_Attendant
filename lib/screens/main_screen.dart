@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:spg_attendant/main.dart';
 import 'package:spg_attendant/screens/attendance_screen.dart';
-import 'package:spg_attendant/screens/sales_screen.dart';
+import 'package:spg_attendant/screens/report_screen.dart';
 import 'package:spg_attendant/services/api_service.dart';
 import 'package:spg_attendant/services/location_service.dart';
 import 'package:spg_attendant/services/storage_service.dart';
@@ -30,7 +30,7 @@ class _MainScreenState extends State<MainScreen> {
     final myApp = MyApp.of(context);
     final isIndo = myApp?.isIndonesian ?? false;
     final String attendanceLabel = isIndo ? 'Kehadiran' : 'Attendance';
-    final String salesLabel = isIndo ? 'Penjualan' : 'Sales';
+    final String reportLabel = isIndo ? 'Laporan' : 'Report';
 
     final List<Widget> screens = [
       AttendanceScreen(
@@ -38,7 +38,9 @@ class _MainScreenState extends State<MainScreen> {
         locationService: widget.locationService,
         storageService: widget.storageService,
       ),
-      const SalesScreen(),
+      ReportScreen(
+        apiService: widget.apiService,
+      ),
     ];
 
     bool isDark = Theme.of(context).brightness == Brightness.dark;
@@ -70,7 +72,7 @@ class _MainScreenState extends State<MainScreen> {
             },
             items: [
               BottomNavigationBarItem(icon: const Icon(Icons.access_time_filled), label: attendanceLabel),
-              BottomNavigationBarItem(icon: const Icon(Icons.shopping_cart), label: salesLabel),
+              BottomNavigationBarItem(icon: const Icon(Icons.assessment), label: reportLabel),
             ],
           ),
         ),

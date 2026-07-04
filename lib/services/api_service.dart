@@ -11,6 +11,11 @@ class ApiService {
     'Place Your Link In Here'  // Final Link
   ];
 
+  static const List<String> reportScriptUrls = [
+    'https://script.google.com/macros/s/AKfycbzLXyE5F6GPncfTu0uqWTc2aB99Jh_ixup9E3nbBv2pXBQSvixYfoht05CMLOhvmzb0lg/exec', // Testing Link for Report
+    'https://script.google.com/macros/s/AKfycbzLXyE5F6GPncfTu0uqWTc2aB99Jh_ixup9E3nbBv2pXBQSvixYfoht05CMLOhvmzb0lg/exec'  // Final Link for Report
+  ];
+
   static Map<String, String>? _promotorCache;
 
   Future<Map<String, String>> fetchPromotorNames() async {
@@ -48,6 +53,29 @@ class ApiService {
       // Send to all URLs concurrently
       final responses = await Future.wait(
         scriptUrls.map((url) => client.post(
+              Uri.parse(url),
+              headers: {'Content-Type': 'text/plain'},
+              body: body,
+            )),
+      );
+
+      // We consider it a success if at least one of the spreadsheets recorded it successfully.
+      bool anySuccess = responses.any((response) => 
+        response.statusCode == 200 || response.statusCode == 302);
+      
+      return anySuccess;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> submitDailyReport(Map<String, dynamic> reportData) async {
+    try {
+      final body = jsonEncode(reportData);
+
+      // Send to all report URLs concurrently
+      final responses = await Future.wait(
+        reportScriptUrls.map((url) => client.post(
               Uri.parse(url),
               headers: {'Content-Type': 'text/plain'},
               body: body,

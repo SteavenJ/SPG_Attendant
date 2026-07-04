@@ -46,3 +46,4 @@ app.*.map.json
 
 # Credentials
 credentials.txt
+node_modules/
