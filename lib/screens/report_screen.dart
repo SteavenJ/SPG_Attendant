@@ -1,6 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:spg_attendant/services/api_service.dart';
+
+class CurrencyInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    if (newValue.text.isEmpty) {
+      return newValue.copyWith(text: '');
+    } else if (newValue.text.compareTo(oldValue.text) != 0) {
+      String newText = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+      if (newText.isEmpty) {
+        return newValue.copyWith(text: '', selection: const TextSelection.collapsed(offset: 0));
+      }
+      
+      final number = int.parse(newText);
+      final newString = NumberFormat.currency(locale: 'id_ID', symbol: '', decimalDigits: 0).format(number);
+
+      return TextEditingValue(
+        text: newString,
+        selection: TextSelection.collapsed(offset: newString.length),
+      );
+    }
+    return newValue;
+  }
+}
 
 class ReportScreen extends StatefulWidget {
   final ApiService apiService;
@@ -167,6 +192,7 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
     String? hintText,
+    List<TextInputFormatter>? inputFormatters,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
@@ -175,6 +201,7 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
         readOnly: readOnly,
         keyboardType: keyboardType,
         maxLines: maxLines,
+        inputFormatters: inputFormatters,
         decoration: InputDecoration(
           labelText: label,
           hintText: hintText,
@@ -256,13 +283,20 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
                       children: [
                         Expanded(child: _buildTextField(controller: _penjualanController, label: 'Penjualan (item)', keyboardType: TextInputType.number)),
                         const SizedBox(width: 16),
-                        Expanded(child: _buildTextField(controller: _totalTerjualController, label: 'Total Terjual (Rp)', keyboardType: TextInputType.number)),
+                        Expanded(child: _buildTextField(
+                          controller: _totalTerjualController, 
+                          label: 'Total Terjual (Rp)', 
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [CurrencyInputFormatter()],
+                        )),
                       ],
                     ),
                     _buildTextField(
                       controller: _estimasiOmzetController,
-                      label: 'Estimasi Omzet',
-                      hintText: 'Contoh: 3jt+',
+                      label: 'Estimasi Omzet (Rp)',
+                      hintText: 'Contoh: 3.000.000',
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [CurrencyInputFormatter()],
                     ),
                     Row(
                       children: [

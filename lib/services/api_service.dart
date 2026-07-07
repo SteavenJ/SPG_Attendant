@@ -7,12 +7,10 @@ class ApiService {
   ApiService({http.Client? client}) : client = client ?? http.Client();
   
   static const List<String> scriptUrls = [
-    'Place Your Link In Here', // Testing Link
-    'Place Your Link In Here'  // Final Link
+    'https://script.google.com/macros/s/AKfycbwrTWRTAgn0yIr02fMOdHlXeutTs99VEcB2mP-bmEWcRJqGxUI3al73HayxG5F8YVIFWg/exec'  // Final Link
   ];
 
   static const List<String> reportScriptUrls = [
-    'https://script.google.com/macros/s/AKfycbzLXyE5F6GPncfTu0uqWTc2aB99Jh_ixup9E3nbBv2pXBQSvixYfoht05CMLOhvmzb0lg/exec', // Testing Link for Report
     'https://script.google.com/macros/s/AKfycbzLXyE5F6GPncfTu0uqWTc2aB99Jh_ixup9E3nbBv2pXBQSvixYfoht05CMLOhvmzb0lg/exec'  // Final Link for Report
   ];
 
@@ -23,8 +21,8 @@ class ApiService {
       return _promotorCache!;
     }
     try {
-      // Using the Final Link for fetching data
-      final response = await client.get(Uri.parse(scriptUrls[1]));
+      // Using the Report Final Link for fetching names because it implements doGet
+      final response = await client.get(Uri.parse(reportScriptUrls[0]));
       if (response.statusCode == 200 || response.statusCode == 302) {
         final Map<String, dynamic> data = jsonDecode(response.body);
         _promotorCache = data.map((key, value) => MapEntry(key, value.toString()));
@@ -50,9 +48,10 @@ class ApiService {
         'address': address,
       });
 
-      // Send to all URLs concurrently
+      // Send to all unique URLs concurrently to avoid duplicates
+      final uniqueUrls = scriptUrls.toSet().toList();
       final responses = await Future.wait(
-        scriptUrls.map((url) => client.post(
+        uniqueUrls.map((url) => client.post(
               Uri.parse(url),
               headers: {'Content-Type': 'text/plain'},
               body: body,
@@ -73,9 +72,10 @@ class ApiService {
     try {
       final body = jsonEncode(reportData);
 
-      // Send to all report URLs concurrently
+      // Send to all unique report URLs concurrently to avoid duplicates
+      final uniqueUrls = reportScriptUrls.toSet().toList();
       final responses = await Future.wait(
-        reportScriptUrls.map((url) => client.post(
+        uniqueUrls.map((url) => client.post(
               Uri.parse(url),
               headers: {'Content-Type': 'text/plain'},
               body: body,

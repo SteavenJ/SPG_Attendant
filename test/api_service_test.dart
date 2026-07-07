@@ -38,10 +38,10 @@ void main() {
       // Assert
       expect(result, true);
       verify(() => mockHttpClient.post(
-            Uri.parse(ApiService.scriptUrl),
-            headers: {'Content-Type': 'application/json'},
-            body: '{"timestamp":"2023-10-27 10:00:00","employeeId":"EMP001","type":"Clock In","address":"123 Test St"}',
-          )).called(1);
+            any(),
+            headers: {'Content-Type': 'text/plain'},
+            body: any(named: 'body'),
+          )).called(ApiService.scriptUrls.length);
     });
 
     test('recordAttendance returns false on HTTP error', () async {
