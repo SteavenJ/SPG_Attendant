@@ -7,7 +7,7 @@ class ApiService {
   ApiService({http.Client? client}) : client = client ?? http.Client();
   
   static const List<String> scriptUrls = [
-    'https://script.google.com/macros/s/AKfycbwrTWRTAgn0yIr02fMOdHlXeutTs99VEcB2mP-bmEWcRJqGxUI3al73HayxG5F8YVIFWg/exec'  // Final Link
+    'https://script.google.com/macros/s/AKfycbzczkV_PmVmnrAAdXxbQGP5Ymxe70tt8hQOBbLnL8it584vP4IMJruIelFsaRo2siE/exec'  // Final Link
   ];
 
   static const List<String> reportScriptUrls = [
@@ -59,8 +59,24 @@ class ApiService {
       );
 
       // We consider it a success if at least one of the spreadsheets recorded it successfully.
-      bool anySuccess = responses.any((response) => 
-        response.statusCode == 200 || response.statusCode == 302);
+      bool anySuccess = false;
+      for (var response in responses) {
+        if (response.statusCode == 200 || response.statusCode == 302) {
+          try {
+            final Map<String, dynamic> responseData = jsonDecode(response.body);
+            if (responseData['status'] == 'success') {
+              anySuccess = true;
+              break;
+            }
+          } catch (_) {
+            // Fallback for non-JSON responses just in case
+            if (response.body.contains('"status":"success"') || response.body.contains('"status": "success"')) {
+              anySuccess = true;
+              break;
+            }
+          }
+        }
+      }
       
       return anySuccess;
     } catch (e) {
@@ -83,8 +99,24 @@ class ApiService {
       );
 
       // We consider it a success if at least one of the spreadsheets recorded it successfully.
-      bool anySuccess = responses.any((response) => 
-        response.statusCode == 200 || response.statusCode == 302);
+      bool anySuccess = false;
+      for (var response in responses) {
+        if (response.statusCode == 200 || response.statusCode == 302) {
+          try {
+            final Map<String, dynamic> responseData = jsonDecode(response.body);
+            if (responseData['status'] == 'success') {
+              anySuccess = true;
+              break;
+            }
+          } catch (_) {
+            // Fallback for non-JSON responses just in case
+            if (response.body.contains('"status":"success"') || response.body.contains('"status": "success"')) {
+              anySuccess = true;
+              break;
+            }
+          }
+        }
+      }
       
       return anySuccess;
     } catch (e) {
