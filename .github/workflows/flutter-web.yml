@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - beta
 
 permissions:
   contents: write
@@ -23,11 +24,26 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build Web
+      - name: Build Web (Main)
+        if: github.ref == 'refs/heads/main'
         run: flutter build web --base-href /SPG_Attendant/
 
-      - name: Deploy to GitHub Pages
+      - name: Deploy Main to GitHub Pages (Root)
+        if: github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./build/web
+          keep_files: true
+
+      - name: Build Web (Beta)
+        if: github.ref == 'refs/heads/beta'
+        run: flutter build web --base-href /SPG_Attendant/beta/
+
+      - name: Deploy Beta to GitHub Pages (/beta subfolder)
+        if: github.ref == 'refs/heads/beta'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build/web
+          destination_dir: beta
