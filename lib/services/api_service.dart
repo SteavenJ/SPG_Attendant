@@ -15,7 +15,7 @@ class ApiService {
   ];
 
   static const List<String> salesScriptUrls = [
-    'https://script.google.com/macros/s/AKfycbzLXyE5F6GPncfTu0uqWTc2aB99Jh_ixup9E3nbBv2pXBQSvixYfoht05CMLOhvmzb0lg/exec'  // Will be updated with user's sales Web App URL
+    'https://script.google.com/macros/s/AKfycbzUlbSZnHftxcLirQk2ryUQh1_vGLRD5gkPR5jCVfnnPN9osqlBzKylwn48y9cWxKkz/exec'  // Penjualan Master Web App
   ];
 
   static Map<String, String>? _promotorCache;
