@@ -14,6 +14,10 @@ class ApiService {
     'https://script.google.com/macros/s/AKfycbzLXyE5F6GPncfTu0uqWTc2aB99Jh_ixup9E3nbBv2pXBQSvixYfoht05CMLOhvmzb0lg/exec'  // Final Link for Report
   ];
 
+  static const List<String> salesScriptUrls = [
+    'https://script.google.com/macros/s/AKfycbzLXyE5F6GPncfTu0uqWTc2aB99Jh_ixup9E3nbBv2pXBQSvixYfoht05CMLOhvmzb0lg/exec'  // Will be updated with user's sales Web App URL
+  ];
+
   static Map<String, String>? _promotorCache;
 
   Future<Map<String, String>> fetchPromotorNames() async {
@@ -118,6 +122,41 @@ class ApiService {
         }
       }
       
+      return anySuccess;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> submitSalesReport(Map<String, dynamic> salesData) async {
+    try {
+      final body = jsonEncode(salesData);
+      final uniqueUrls = salesScriptUrls.toSet().toList();
+      final responses = await Future.wait(
+        uniqueUrls.map((url) => client.post(
+              Uri.parse(url),
+              headers: {'Content-Type': 'text/plain'},
+              body: body,
+            )),
+      );
+
+      bool anySuccess = false;
+      for (var response in responses) {
+        if (response.statusCode == 200 || response.statusCode == 302) {
+          try {
+            final Map<String, dynamic> responseData = jsonDecode(response.body);
+            if (responseData['status'] == 'success') {
+              anySuccess = true;
+              break;
+            }
+          } catch (_) {
+            if (response.body.contains('"status":"success"') || response.body.contains('"status": "success"')) {
+              anySuccess = true;
+              break;
+            }
+          }
+        }
+      }
       return anySuccess;
     } catch (e) {
       return false;
