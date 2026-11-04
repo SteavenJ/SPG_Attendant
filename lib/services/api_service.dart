@@ -20,22 +20,35 @@ class ApiService {
 
   static Map<String, String>? _promotorCache;
 
-  Future<Map<String, String>> fetchPromotorNames() async {
-    if (_promotorCache != null) {
+  Future<Map<String, String>> fetchPromotorNames({bool forceRefresh = false}) async {
+    if (!forceRefresh && _promotorCache != null) {
       return _promotorCache!;
     }
+    // 1. Coba ambil langsung dari REKAP ABSEN SPG (scriptUrls[0])
     try {
-      // Using the Report Final Link for fetching names because it implements doGet
+      final response = await client.get(Uri.parse(scriptUrls[0]));
+      if (response.statusCode == 200 || response.statusCode == 302) {
+        final dynamic decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic> && decoded.isNotEmpty && !decoded.containsKey('status')) {
+          _promotorCache = decoded.map((key, value) => MapEntry(key, value.toString()));
+          return _promotorCache!;
+        }
+      }
+    } catch (_) {}
+
+    // 2. Fallback ke reportScriptUrls jika scriptUrls belum ada doGet
+    try {
       final response = await client.get(Uri.parse(reportScriptUrls[0]));
       if (response.statusCode == 200 || response.statusCode == 302) {
-        final Map<String, dynamic> data = jsonDecode(response.body);
-        _promotorCache = data.map((key, value) => MapEntry(key, value.toString()));
-        return _promotorCache!;
+        final dynamic decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          _promotorCache = decoded.map((key, value) => MapEntry(key, value.toString()));
+          return _promotorCache!;
+        }
       }
-    } catch (e) {
-      // Return empty map on error
-    }
-    return {};
+    } catch (_) {}
+
+    return _promotorCache ?? {};
   }
 
   Future<bool> recordAttendance({

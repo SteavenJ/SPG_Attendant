@@ -98,8 +98,8 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
     _loadPencapaian();
   }
 
-  Future<void> _loadPromotorNames() async {
-    final names = await widget.apiService.fetchPromotorNames();
+  Future<void> _loadPromotorNames({bool forceRefresh = false}) async {
+    final names = await widget.apiService.fetchPromotorNames(forceRefresh: forceRefresh);
     if (mounted) {
       setState(() {
         _promotorNames = names;
@@ -491,7 +491,10 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
     }
 
     return RefreshIndicator(
-      onRefresh: () => _loadPencapaian(showSpinner: true),
+      onRefresh: () async {
+        await _loadPromotorNames(forceRefresh: true);
+        await _loadPencapaian(showSpinner: true);
+      },
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16.0),
