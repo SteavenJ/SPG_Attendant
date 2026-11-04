@@ -29,7 +29,7 @@ class CurrencyInputFormatter extends TextInputFormatter {
   }
 }
 
-enum SalesViewMode { input, list }
+enum MainView { penjualan, pencapaian }
 
 class ReportScreen extends StatefulWidget {
   final ApiService apiService;
@@ -80,8 +80,8 @@ class _ReportScreenState extends State<ReportScreen>
   bool _isLoadingNames = true;
   bool _isSubmitting = false;
 
-  // View Mode Penjualan (Input Form atau Daftar Penjualan)
-  SalesViewMode _salesViewMode = SalesViewMode.input;
+  // Navigasi Utama Sidebar: Penjualan atau Pencapaian Toko
+  MainView _currentView = MainView.penjualan;
 
   // Daftar Penjualan State
   List<dynamic> _salesHistory = [];
@@ -113,10 +113,11 @@ class _ReportScreenState extends State<ReportScreen>
   }
 
   void _onTabChanged() {
-    if (_tabController.index == 1 && mounted) {
-      _loadPencapaian(showSpinner: _pencapaianData == null);
-    } else if (_tabController.index == 0 && _salesViewMode == SalesViewMode.list && mounted) {
-      _loadSalesHistory(showSpinner: _salesHistory.isEmpty);
+    if (mounted) {
+      setState(() {});
+      if (_tabController.index == 1) {
+        _loadSalesHistory(showSpinner: _salesHistory.isEmpty);
+      }
     }
   }
 
@@ -260,7 +261,7 @@ class _ReportScreenState extends State<ReportScreen>
     _debounceTimer = Timer(const Duration(milliseconds: 600), () {
       if (mounted) {
         _loadPencapaian(showSpinner: false);
-        if (_salesViewMode == SalesViewMode.list) {
+        if (_currentView == MainView.penjualan && _tabController.index == 1) {
           _loadSalesHistory(showSpinner: false);
         }
       }
@@ -389,12 +390,10 @@ class _ReportScreenState extends State<ReportScreen>
             backgroundColor: const Color(0xFF10B981),
             content: const Text('Laporan Penjualan berhasil dicatat!'),
             action: SnackBarAction(
-              label: 'Lihat Daftar',
+              label: 'Lihat Data',
               textColor: Colors.white,
               onPressed: () {
-                setState(() {
-                  _salesViewMode = SalesViewMode.list;
-                });
+                _tabController.animateTo(1);
                 _loadSalesHistory();
               },
             ),
@@ -1389,46 +1388,62 @@ class _ReportScreenState extends State<ReportScreen>
             ),
           ),
           ListTile(
-            leading: const Icon(Icons.edit_note_rounded, color: Color(0xFF10B981)),
-            title: const Text('Input Penjualan', style: TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: const Text('Form laporan penjualan baru'),
-            selected: _tabController.index == 0 && _salesViewMode == SalesViewMode.input,
+            leading: const Icon(Icons.point_of_sale, color: Color(0xFF10B981)),
+            title: const Text('Penjualan', style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: const Text('Input & Data Penjualan'),
+            selected: _currentView == MainView.penjualan,
             selectedTileColor: const Color(0xFF10B981).withValues(alpha: 0.1),
             onTap: () {
               Navigator.pop(context);
               setState(() {
-                _salesViewMode = SalesViewMode.input;
-                _tabController.animateTo(0);
+                _currentView = MainView.penjualan;
               });
             },
           ),
-          ListTile(
-            leading: const Icon(Icons.receipt_long_rounded, color: Color(0xFF3B82F6)),
-            title: const Text('Daftar Penjualan', style: TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: const Text('Riwayat transaksi penjualan'),
-            selected: _tabController.index == 0 && _salesViewMode == SalesViewMode.list,
-            selectedTileColor: const Color(0xFF3B82F6).withValues(alpha: 0.1),
-            onTap: () {
-              Navigator.pop(context);
-              setState(() {
-                _salesViewMode = SalesViewMode.list;
-                _tabController.animateTo(0);
-              });
-              _loadSalesHistory();
-            },
+          Padding(
+            padding: const EdgeInsets.only(left: 16),
+            child: ListTile(
+              leading: const Icon(Icons.edit_note, size: 22, color: Color(0xFF10B981)),
+              title: const Text('Input Penjualan', style: TextStyle(fontSize: 14)),
+              selected: _currentView == MainView.penjualan && _tabController.index == 0,
+              onTap: () {
+                Navigator.pop(context);
+                setState(() {
+                  _currentView = MainView.penjualan;
+                  _tabController.animateTo(0);
+                });
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 16),
+            child: ListTile(
+              leading: const Icon(Icons.receipt_long, size: 22, color: Color(0xFF3B82F6)),
+              title: const Text('Data Penjualan', style: TextStyle(fontSize: 14)),
+              selected: _currentView == MainView.penjualan && _tabController.index == 1,
+              onTap: () {
+                Navigator.pop(context);
+                setState(() {
+                  _currentView = MainView.penjualan;
+                  _tabController.animateTo(1);
+                });
+                _loadSalesHistory();
+              },
+            ),
           ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.emoji_events_rounded, color: Colors.amber),
             title: const Text('Pencapaian Toko', style: TextStyle(fontWeight: FontWeight.w600)),
             subtitle: const Text('Podium & Peringkat Toko'),
-            selected: _tabController.index == 1,
+            selected: _currentView == MainView.pencapaian,
             selectedTileColor: Colors.amber.withValues(alpha: 0.1),
             onTap: () {
               Navigator.pop(context);
               setState(() {
-                _tabController.animateTo(1);
+                _currentView = MainView.pencapaian;
               });
+              _loadPencapaian();
             },
           ),
           const Spacer(),
@@ -1467,9 +1482,7 @@ class _ReportScreenState extends State<ReportScreen>
               const SizedBox(height: 16),
               ElevatedButton.icon(
                 onPressed: () {
-                  setState(() {
-                    _salesViewMode = SalesViewMode.input;
-                  });
+                  _tabController.animateTo(0);
                 },
                 icon: const Icon(Icons.edit_note),
                 label: const Text('Buka Form Input Penjualan'),
@@ -1565,9 +1578,7 @@ class _ReportScreenState extends State<ReportScreen>
                 const Spacer(),
                 ElevatedButton.icon(
                   onPressed: () {
-                    setState(() {
-                      _salesViewMode = SalesViewMode.input;
-                    });
+                    _tabController.animateTo(0);
                   },
                   icon: const Icon(Icons.add, size: 18, color: Color(0xFF1D4ED8)),
                   label: const Text(
@@ -1866,10 +1877,7 @@ class _ReportScreenState extends State<ReportScreen>
     );
   }
 
-  Widget _buildSalesTab() {
-    if (_salesViewMode == SalesViewMode.list) {
-      return _buildSalesListTab();
-    }
+  Widget _buildSalesInputTab() {
     if (_isLoadingNames) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -1880,7 +1888,7 @@ class _ReportScreenState extends State<ReportScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // SHORTCUT BANNER TO DAFTAR PENJUALAN
+            // SHORTCUT BANNER TO DATA PENJUALAN
             Container(
               margin: const EdgeInsets.only(bottom: 16),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1901,15 +1909,13 @@ class _ReportScreenState extends State<ReportScreen>
                   ),
                   InkWell(
                     onTap: () {
-                      setState(() {
-                        _salesViewMode = SalesViewMode.list;
-                      });
+                      _tabController.animateTo(1);
                       _loadSalesHistory();
                     },
                     child: const Row(
                       children: [
                         Text(
-                          'Buka Daftar Penjualan',
+                          'Buka Data Penjualan',
                           style: TextStyle(
                             color: Color(0xFF3B82F6),
                             fontWeight: FontWeight.bold,
@@ -2130,25 +2136,25 @@ class _ReportScreenState extends State<ReportScreen>
   Widget build(BuildContext context) {
     super.build(context);
 
+    final isPenjualan = _currentView == MainView.penjualan;
+
     return Scaffold(
       drawer: _buildSidebar(),
       appBar: AppBar(
         title: Text(
-          _tabController.index == 1
-              ? 'Pencapaian Toko'
-              : (_salesViewMode == SalesViewMode.list ? 'DATA PENJUALAN' : 'Laporan Penjualan'),
+          isPenjualan
+              ? (_tabController.index == 0 ? 'Penjualan' : 'Data Penjualan')
+              : 'Pencapaian Toko',
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
         actions: [
-          if (_tabController.index == 0 && _salesViewMode == SalesViewMode.list)
+          if (isPenjualan && _tabController.index == 1)
             Padding(
               padding: const EdgeInsets.only(right: 4.0),
               child: ElevatedButton.icon(
                 onPressed: () {
-                  setState(() {
-                    _salesViewMode = SalesViewMode.input;
-                  });
+                  _tabController.animateTo(0);
                 },
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('Add'),
@@ -2165,9 +2171,9 @@ class _ReportScreenState extends State<ReportScreen>
             icon: const Icon(Icons.refresh),
             tooltip: 'Muat Ulang',
             onPressed: () {
-              if (_tabController.index == 1) {
+              if (!isPenjualan) {
                 _loadPencapaian(showSpinner: true);
-              } else if (_salesViewMode == SalesViewMode.list) {
+              } else if (_tabController.index == 1) {
                 _loadSalesHistory(showSpinner: true);
               } else {
                 _loadPromotorNames(forceRefresh: true);
@@ -2176,34 +2182,35 @@ class _ReportScreenState extends State<ReportScreen>
             },
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: const Color(0xFF10B981),
-          indicatorWeight: 3,
-          labelColor: const Color(0xFF10B981),
-          unselectedLabelColor: Colors.grey,
-          tabs: const [
-            Tab(
-              icon: Icon(Icons.point_of_sale),
-              text: 'Penjualan',
-            ),
-            Tab(
-              icon: Icon(Icons.emoji_events_outlined),
-              text: 'Pencapaian',
-            ),
-          ],
-        ),
+        bottom: isPenjualan
+            ? TabBar(
+                controller: _tabController,
+                indicatorColor: const Color(0xFF10B981),
+                indicatorWeight: 3,
+                labelColor: const Color(0xFF10B981),
+                unselectedLabelColor: Colors.grey,
+                tabs: const [
+                  Tab(
+                    icon: Icon(Icons.point_of_sale),
+                    text: 'Penjualan',
+                  ),
+                  Tab(
+                    icon: Icon(Icons.receipt_long),
+                    text: 'Data Penjualan',
+                  ),
+                ],
+              )
+            : null,
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          // TAB 1: PENJUALAN
-          _buildSalesTab(),
-
-          // TAB 2: PENCAPAIAN
-          _buildPencapaianTab(),
-        ],
-      ),
+      body: isPenjualan
+          ? TabBarView(
+              controller: _tabController,
+              children: [
+                _buildSalesInputTab(),
+                _buildSalesListTab(),
+              ],
+            )
+          : _buildPencapaianTab(),
     );
   }
 }
