@@ -29,6 +29,8 @@ class CurrencyInputFormatter extends TextInputFormatter {
   }
 }
 
+enum SalesViewMode { input, list }
+
 class ReportScreen extends StatefulWidget {
   final ApiService apiService;
   final StorageService storageService;
@@ -78,6 +80,20 @@ class _ReportScreenState extends State<ReportScreen>
   bool _isLoadingNames = true;
   bool _isSubmitting = false;
 
+  // View Mode Penjualan (Input Form atau Daftar Penjualan)
+  SalesViewMode _salesViewMode = SalesViewMode.input;
+
+  // Daftar Penjualan State
+  List<dynamic> _salesHistory = [];
+  bool _isLoadingHistory = false;
+  String? _historyError;
+  int _historyTotalAmount = 0;
+  int _historyTotalTransactions = 0;
+  List<String> _availableStores = [];
+  String? _selectedFilterStore;
+  String? _selectedFilterDate;
+  bool _isAdminHistory = false;
+
   // Pencapaian State
   Map<String, dynamic>? _pencapaianData;
   bool _isLoadingPencapaian = false;
@@ -99,6 +115,8 @@ class _ReportScreenState extends State<ReportScreen>
   void _onTabChanged() {
     if (_tabController.index == 1 && mounted) {
       _loadPencapaian(showSpinner: _pencapaianData == null);
+    } else if (_tabController.index == 0 && _salesViewMode == SalesViewMode.list && mounted) {
+      _loadSalesHistory(showSpinner: _salesHistory.isEmpty);
     }
   }
 
@@ -146,6 +164,87 @@ class _ReportScreenState extends State<ReportScreen>
     }
   }
 
+  Future<void> _loadSalesHistory({bool showSpinner = true}) async {
+    final empId = _idController.text.trim();
+    if (empId.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _salesHistory = [];
+          _historyTotalAmount = 0;
+          _historyTotalTransactions = 0;
+          _historyError = 'Silakan masukkan ID terlebih dahulu di form Penjualan.';
+        });
+      }
+      return;
+    }
+
+    if (showSpinner && mounted) {
+      setState(() {
+        _isLoadingHistory = true;
+        _historyError = null;
+      });
+    }
+
+    final data = await widget.apiService.fetchSalesHistory(
+      employeeId: empId,
+      toko: _selectedFilterStore,
+      tanggal: _selectedFilterDate,
+    );
+
+    if (mounted) {
+      setState(() {
+        _isLoadingHistory = false;
+        if (data != null && data['status'] == 'success') {
+          _salesHistory = data['data'] as List<dynamic>? ?? [];
+          _historyTotalAmount = (data['totalAmount'] as num?)?.toInt() ?? 0;
+          _historyTotalTransactions = (data['totalCount'] as num?)?.toInt() ?? _salesHistory.length;
+          _isAdminHistory = data['isAdmin'] == true || empId == '101';
+          if (data['stores'] != null) {
+            _availableStores = List<String>.from(data['stores']);
+          }
+          _historyError = null;
+        } else {
+          _historyError = data?['message'] ?? 'Gagal memuat riwayat penjualan.';
+        }
+      });
+    }
+  }
+
+  String _formatCurrency(num value) {
+    return NumberFormat.currency(
+      locale: 'id_ID',
+      symbol: '',
+      decimalDigits: 0,
+    ).format(value).trim();
+  }
+
+  String _formatIndonesianDate(String rawDate) {
+    try {
+      DateTime dt;
+      if (rawDate.contains('T')) {
+        dt = DateTime.parse(rawDate);
+      } else if (rawDate.contains(' ')) {
+        final parts = rawDate.split(' ')[0].split('-');
+        dt = DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+      } else {
+        final parts = rawDate.split('-');
+        dt = DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+      }
+
+      const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+      const months = [
+        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+      ];
+
+      final dayName = days[dt.weekday - 1];
+      final monthName = months[dt.month - 1];
+      return '$dayName, ${dt.day} $monthName ${dt.year}';
+    } catch (_) {
+      return rawDate;
+    }
+  }
+
   void _onIdChanged() {
     final id = _idController.text.trim();
     if (id.isNotEmpty) {
@@ -161,6 +260,9 @@ class _ReportScreenState extends State<ReportScreen>
     _debounceTimer = Timer(const Duration(milliseconds: 600), () {
       if (mounted) {
         _loadPencapaian(showSpinner: false);
+        if (_salesViewMode == SalesViewMode.list) {
+          _loadSalesHistory(showSpinner: false);
+        }
       }
     });
   }
@@ -283,14 +385,25 @@ class _ReportScreenState extends State<ReportScreen>
 
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Color(0xFF10B981),
-            content: Text('Laporan Penjualan berhasil dicatat!'),
+          SnackBar(
+            backgroundColor: const Color(0xFF10B981),
+            content: const Text('Laporan Penjualan berhasil dicatat!'),
+            action: SnackBarAction(
+              label: 'Lihat Daftar',
+              textColor: Colors.white,
+              onPressed: () {
+                setState(() {
+                  _salesViewMode = SalesViewMode.list;
+                });
+                _loadSalesHistory();
+              },
+            ),
           ),
         );
         _resetFormFields();
-        // Refresh data pencapaian setelah submit
+        // Refresh data pencapaian dan riwayat setelah submit
         _loadPencapaian(showSpinner: false);
+        _loadSalesHistory(showSpinner: false);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -989,56 +1102,830 @@ class _ReportScreenState extends State<ReportScreen>
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
+  Widget _buildDetailItem({
+    required String title,
+    required int value,
+    required List<String> details,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final hasData = value > 0 || details.isNotEmpty;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Laporan & Pencapaian'),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Muat Ulang',
-            onPressed: () {
-              _loadPromotorNames(forceRefresh: true);
-              _loadPencapaian(showSpinner: true);
-            },
-          ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: const Color(0xFF10B981),
-          indicatorWeight: 3,
-          labelColor: const Color(0xFF10B981),
-          unselectedLabelColor: Colors.grey,
-          tabs: const [
-            Tab(
-              icon: Icon(Icons.point_of_sale),
-              text: 'Penjualan',
-            ),
-            Tab(
-              icon: Icon(Icons.emoji_events_outlined),
-              text: 'Pencapaian',
-            ),
-          ],
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: hasData
+              ? (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1))
+              : (isDark ? Colors.white10 : Colors.black12),
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-            // TAB 1: PENJUALAN
-            _isLoadingNames
-                ? const Center(child: CircularProgressIndicator())
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: hasData ? null : Colors.grey,
+                ),
+              ),
+              Text(
+                'Rp ${_formatCurrency(value)}',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: value > 0 ? const Color(0xFF10B981) : Colors.grey,
+                ),
+              ),
+            ],
+          ),
+          if (details.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: details.map((d) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    d,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _showSaleDetailBottomSheet(Map<String, dynamic> item) {
+    final rawName = item['nama']?.toString().toUpperCase() ?? 'SPG';
+    final rawDate = item['tanggal']?.toString() ?? item['timestamp']?.toString() ?? '';
+    final formattedDate = _formatIndonesianDate(rawDate);
+    final timestamp = item['timestamp']?.toString() ?? '';
+    final tokoName = item['toko']?.toString() ?? '';
+    final totalVal = (item['total'] as num?)?.toInt() ?? 0;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.65,
+          minChildSize: 0.4,
+          maxChildSize: 0.9,
+          builder: (context, scrollController) {
+            return Container(
+              padding: const EdgeInsets.all(20),
+              child: ListView(
+                controller: scrollController,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade400,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // IDENTITAS
+                          Text(
+                            rawName,
+                            style: const TextStyle(
+                              color: Color(0xFF3B82F6),
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (tokoName.isNotEmpty)
+                            Text(
+                              'Toko: $tokoName',
+                              style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                            ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'Total: Rp ${_formatCurrency(totalVal)}',
+                          style: const TextStyle(
+                            color: Color(0xFF10B981),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    formattedDate + (timestamp.isNotEmpty ? ' • $timestamp' : ''),
+                    style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                  ),
+                  const Divider(height: 24),
+                  const Text(
+                    'Rincian Produk Terjual',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Lawrence
+                  _buildDetailItem(
+                    title: '🛏️ Lawrence',
+                    value: (item['lawValue'] as num?)?.toInt() ?? 0,
+                    details: [
+                      if (((item['lawQtyOs'] as num?)?.toInt() ?? 0) > 0)
+                        'Qty OS: ${item['lawQtyOs']}',
+                      if (((item['lawQtyNh'] as num?)?.toInt() ?? 0) > 0)
+                        'Qty NH: ${item['lawQtyNh']}',
+                      if ((item['lawNoSo']?.toString().trim().isNotEmpty ?? false))
+                        'No SO: ${item['lawNoSo']}',
+                    ],
+                  ),
+
+                  // Superbed
+                  _buildDetailItem(
+                    title: '⭐ Superbed',
+                    value: (item['sbValue'] as num?)?.toInt() ?? 0,
+                    details: [
+                      if ((item['sbNoSo']?.toString().trim().isNotEmpty ?? false))
+                        'No SO: ${item['sbNoSo']}',
+                    ],
+                  ),
+
+                  // Sofa
+                  _buildDetailItem(
+                    title: '🛋️ Sofa',
+                    value: (item['sofaValue'] as num?)?.toInt() ?? 0,
+                    details: [
+                      if (((item['sofaQty'] as num?)?.toInt() ?? 0) > 0)
+                        'Qty: ${item['sofaQty']}',
+                      if ((item['sofaNoSo']?.toString().trim().isNotEmpty ?? false))
+                        'No SO: ${item['sofaNoSo']}',
+                    ],
+                  ),
+
+                  // Bedding / Busa
+                  _buildDetailItem(
+                    title: '🛏️ Bedding / Busa',
+                    value: (item['bedValue'] as num?)?.toInt() ?? 0,
+                    details: [
+                      if ((item['bedNoSo']?.toString().trim().isNotEmpty ?? false))
+                        'No SO: ${item['bedNoSo']}',
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1E293B),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Tutup'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSidebar() {
+    final empId = _idController.text.trim();
+    final name = _nameController.text.trim().isNotEmpty
+        ? _nameController.text.trim()
+        : (empId == '101' ? 'ADMINISTRATOR' : 'SPG Attendant');
+    final isAdmin = empId == '101';
+
+    return Drawer(
+      child: Column(
+        children: [
+          UserAccountsDrawerHeader(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            currentAccountPicture: CircleAvatar(
+              backgroundColor: isAdmin ? Colors.amber : const Color(0xFF10B981),
+              child: Icon(
+                isAdmin ? Icons.admin_panel_settings : Icons.person,
+                color: Colors.white,
+                size: 36,
+              ),
+            ),
+            accountName: Text(
+              name,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            accountEmail: Row(
+              children: [
+                Text(
+                  empId.isNotEmpty ? 'ID: $empId' : 'Belum input ID',
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+                if (isAdmin) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.amber,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'ADMIN',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.edit_note_rounded, color: Color(0xFF10B981)),
+            title: const Text('Input Penjualan', style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: const Text('Form laporan penjualan baru'),
+            selected: _tabController.index == 0 && _salesViewMode == SalesViewMode.input,
+            selectedTileColor: const Color(0xFF10B981).withValues(alpha: 0.1),
+            onTap: () {
+              Navigator.pop(context);
+              setState(() {
+                _salesViewMode = SalesViewMode.input;
+                _tabController.animateTo(0);
+              });
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.receipt_long_rounded, color: Color(0xFF3B82F6)),
+            title: const Text('Daftar Penjualan', style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: const Text('Riwayat transaksi penjualan'),
+            selected: _tabController.index == 0 && _salesViewMode == SalesViewMode.list,
+            selectedTileColor: const Color(0xFF3B82F6).withValues(alpha: 0.1),
+            onTap: () {
+              Navigator.pop(context);
+              setState(() {
+                _salesViewMode = SalesViewMode.list;
+                _tabController.animateTo(0);
+              });
+              _loadSalesHistory();
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.emoji_events_rounded, color: Colors.amber),
+            title: const Text('Pencapaian Toko', style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: const Text('Podium & Peringkat Toko'),
+            selected: _tabController.index == 1,
+            selectedTileColor: Colors.amber.withValues(alpha: 0.1),
+            onTap: () {
+              Navigator.pop(context);
+              setState(() {
+                _tabController.animateTo(1);
+              });
+            },
+          ),
+          const Spacer(),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              'SPG Attendant v1.1 • Beta',
+              style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSalesListTab() {
+    if (_idController.text.trim().isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.badge_outlined, size: 64, color: Colors.grey.shade400),
+              const SizedBox(height: 16),
+              const Text(
+                'Masukkan ID Anda Terlebih Dahulu',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'ID diperlukan untuk memuat riwayat penjualan Anda.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey.shade500),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _salesViewMode = SalesViewMode.input;
+                  });
+                },
+                icon: const Icon(Icons.edit_note),
+                label: const Text('Buka Form Input Penjualan'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_isLoadingHistory) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Color(0xFF3B82F6)),
+            SizedBox(height: 16),
+            Text('Memuat riwayat penjualan...'),
+          ],
+        ),
+      );
+    }
+
+    if (_historyError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off_rounded, size: 56, color: Colors.amber),
+              const SizedBox(height: 16),
+              Text(
+                _historyError!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () => _loadSalesHistory(showSpinner: true),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Coba Lagi'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return RefreshIndicator(
+      onRefresh: () => _loadSalesHistory(showSpinner: true),
+      child: ListView(
+        padding: const EdgeInsets.only(bottom: 40),
+        children: [
+          // HEADER BAR: "DATA PENJUALAN" dengan tombol "+ Add" (Identik Data Penjualan.jpeg)
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1D4ED8), Color(0xFF2563EB)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF1D4ED8).withValues(alpha: 0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.receipt_long, color: Colors.white, size: 24),
+                const SizedBox(width: 10),
+                const Text(
+                  'DATA PENJUALAN',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _salesViewMode = SalesViewMode.input;
+                    });
+                  },
+                  icon: const Icon(Icons.add, size: 18, color: Color(0xFF1D4ED8)),
+                  label: const Text(
+                    'Add',
+                    style: TextStyle(
+                      color: Color(0xFF1D4ED8),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF1D4ED8),
+                    elevation: 2,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // FILTER ADMIN (Hanya Tampil Jika ID 101)
+          if (_isAdminHistory)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.admin_panel_settings, color: Colors.amber, size: 18),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Filter Admin',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.amber),
+                      ),
+                      const Spacer(),
+                      if (_selectedFilterStore != null || _selectedFilterDate != null)
+                        InkWell(
+                          onTap: () {
+                            setState(() {
+                              _selectedFilterStore = null;
+                              _selectedFilterDate = null;
+                            });
+                            _loadSalesHistory(showSpinner: true);
+                          },
+                          child: Text(
+                            'Reset Filter',
+                            style: TextStyle(color: Colors.red.shade400, fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      // Filter Toko Dropdown
+                      Expanded(
+                        flex: 5,
+                        child: DropdownButtonFormField<String>(
+                          value: _selectedFilterStore,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            labelText: 'Toko',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          items: [
+                            const DropdownMenuItem<String>(
+                              value: null,
+                              child: Text('Semua Toko', style: TextStyle(fontSize: 12)),
+                            ),
+                            ..._availableStores.map((store) {
+                              return DropdownMenuItem<String>(
+                                value: store,
+                                child: Text(store, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
+                              );
+                            }),
+                          ],
+                          onChanged: (val) {
+                            setState(() {
+                              _selectedFilterStore = val;
+                            });
+                            _loadSalesHistory(showSpinner: true);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Filter Tanggal Button
+                      Expanded(
+                        flex: 5,
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            final now = DateTime.now();
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: _selectedFilterDate != null
+                                  ? DateTime.tryParse(_selectedFilterDate!) ?? now
+                                  : now,
+                              firstDate: DateTime(2024),
+                              lastDate: DateTime(2030),
+                            );
+                            if (picked != null) {
+                              setState(() {
+                                _selectedFilterDate = DateFormat('yyyy-MM-dd').format(picked);
+                              });
+                              _loadSalesHistory(showSpinner: true);
+                            }
+                          },
+                          icon: const Icon(Icons.calendar_today, size: 14),
+                          label: Text(
+                            _selectedFilterDate ?? 'Semua Tgl',
+                            style: const TextStyle(fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+          // SUMMARY STATS (Total Transaksi & Total Nilai)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '$_historyTotalTransactions Transaksi',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  'Total: Rp ${_formatCurrency(_historyTotalAmount)}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF10B981),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // LIST DATA
+          if (_salesHistory.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(40.0),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.receipt_long_outlined, size: 56, color: Colors.grey.shade400),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Tidak ada transaksi penjualan',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Belum ada data yang tercatat sesuai filter.',
+                      style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ..._salesHistory.map((item) {
+              final itemMap = Map<String, dynamic>.from(item as Map);
+              final rawName = itemMap['nama']?.toString().toUpperCase() ?? 'SPG';
+              final rawDate = itemMap['tanggal']?.toString() ?? itemMap['timestamp']?.toString() ?? '';
+              final formattedDate = _formatIndonesianDate(rawDate);
+              final totalVal = (itemMap['total'] as num?)?.toInt() ?? 0;
+              final formattedAmount = _formatCurrency(totalVal);
+              final tokoName = itemMap['toko']?.toString() ?? '';
+
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => _showSaleDetailBottomSheet(itemMap),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // NAMA SPG (Indigo / Blue font sesuai Data Penjualan.jpeg)
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      rawName,
+                                      style: const TextStyle(
+                                        color: Color(0xFF3B82F6),
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                        letterSpacing: 0.3,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (_isAdminHistory && tokoName.isNotEmpty) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF3B82F6).withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        tokoName,
+                                        style: const TextStyle(
+                                          color: Color(0xFF3B82F6),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              // TANGGAL (Indonesian style: Sabtu, 26 Juli 2025)
+                              Text(
+                                formattedDate,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              // TOTAL NILAI (Tanpa Rp / Berformat titik sesuai Data Penjualan.jpeg)
+                              Text(
+                                formattedAmount,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: isDark ? Colors.grey.shade300 : Colors.grey.shade800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Trailing '...' icon
+                        IconButton(
+                          icon: const Icon(Icons.more_horiz, color: Colors.grey),
+                          tooltip: 'Detail Penjualan',
+                          onPressed: () => _showSaleDetailBottomSheet(itemMap),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSalesTab() {
+    if (_salesViewMode == SalesViewMode.list) {
+      return _buildSalesListTab();
+    }
+    if (_isLoadingNames) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // SHORTCUT BANNER TO DAFTAR PENJUALAN
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E3A8A).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF1E3A8A).withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.receipt_long, color: Color(0xFF3B82F6), size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Riwayat Penjualan',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () {
+                      setState(() {
+                        _salesViewMode = SalesViewMode.list;
+                      });
+                      _loadSalesHistory();
+                    },
+                    child: const Row(
+                      children: [
+                        Text(
+                          'Buka Daftar Penjualan',
+                          style: TextStyle(
+                            color: Color(0xFF3B82F6),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        SizedBox(width: 4),
+                        Icon(Icons.arrow_forward_ios, size: 12, color: Color(0xFF3B82F6)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+                              // IDENTITAS
                           Container(
                             padding: const EdgeInsets.all(16),
                             margin: const EdgeInsets.only(bottom: 20),
@@ -1236,12 +2123,87 @@ class _ReportScreenState extends State<ReportScreen>
                         ],
                       ),
                     ),
-                  ),
+                  );
+  }
 
-            // TAB 2: PENCAPAIAN
-            _buildPencapaianTab(),
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+
+    return Scaffold(
+      drawer: _buildSidebar(),
+      appBar: AppBar(
+        title: Text(
+          _tabController.index == 1
+              ? 'Pencapaian Toko'
+              : (_salesViewMode == SalesViewMode.list ? 'DATA PENJUALAN' : 'Laporan Penjualan'),
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        centerTitle: true,
+        actions: [
+          if (_tabController.index == 0 && _salesViewMode == SalesViewMode.list)
+            Padding(
+              padding: const EdgeInsets.only(right: 4.0),
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _salesViewMode = SalesViewMode.input;
+                  });
+                },
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Add'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              ),
+            ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Muat Ulang',
+            onPressed: () {
+              if (_tabController.index == 1) {
+                _loadPencapaian(showSpinner: true);
+              } else if (_salesViewMode == SalesViewMode.list) {
+                _loadSalesHistory(showSpinner: true);
+              } else {
+                _loadPromotorNames(forceRefresh: true);
+                _loadPencapaian(showSpinner: true);
+              }
+            },
+          ),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: const Color(0xFF10B981),
+          indicatorWeight: 3,
+          labelColor: const Color(0xFF10B981),
+          unselectedLabelColor: Colors.grey,
+          tabs: const [
+            Tab(
+              icon: Icon(Icons.point_of_sale),
+              text: 'Penjualan',
+            ),
+            Tab(
+              icon: Icon(Icons.emoji_events_outlined),
+              text: 'Pencapaian',
+            ),
           ],
         ),
-      );
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          // TAB 1: PENJUALAN
+          _buildSalesTab(),
+
+          // TAB 2: PENCAPAIAN
+          _buildPencapaianTab(),
+        ],
+      ),
+    );
   }
 }

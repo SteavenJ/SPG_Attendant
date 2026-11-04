@@ -214,4 +214,51 @@ class ApiService {
     }
     return null;
   }
+
+  Future<Map<String, dynamic>?> fetchSalesHistory({
+    required String employeeId,
+    String? toko,
+    String? tanggal,
+  }) async {
+    try {
+      final body = jsonEncode({
+        'action': 'daftar_penjualan',
+        'employeeId': employeeId,
+        if (toko != null && toko.isNotEmpty) 'toko': toko,
+        if (tanggal != null && tanggal.isNotEmpty) 'tanggal': tanggal,
+      });
+
+      final response = await client.post(
+        Uri.parse(salesScriptUrls[0]),
+        headers: {'Content-Type': 'text/plain'},
+        body: body,
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 302) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        if (data['status'] == 'success') {
+          return data;
+        }
+      }
+    } catch (_) {
+      try {
+        final queryParams = <String, String>{
+          'action': 'daftar_penjualan',
+          'employeeId': employeeId,
+        };
+        if (toko != null && toko.isNotEmpty) queryParams['toko'] = toko;
+        if (tanggal != null && tanggal.isNotEmpty) queryParams['tanggal'] = tanggal;
+
+        final uri = Uri.parse(salesScriptUrls[0]).replace(queryParameters: queryParams);
+        final response = await client.get(uri);
+        if (response.statusCode == 200 || response.statusCode == 302) {
+          final Map<String, dynamic> data = jsonDecode(response.body);
+          if (data['status'] == 'success') {
+            return data;
+          }
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
 }
