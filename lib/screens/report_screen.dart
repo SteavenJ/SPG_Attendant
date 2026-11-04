@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:spg_attendant/services/api_service.dart';
+import 'package:spg_attendant/services/storage_service.dart';
 
 class CurrencyInputFormatter extends TextInputFormatter {
   @override
@@ -29,8 +30,13 @@ class CurrencyInputFormatter extends TextInputFormatter {
 
 class ReportScreen extends StatefulWidget {
   final ApiService apiService;
+  final StorageService storageService;
 
-  const ReportScreen({Key? key, required this.apiService}) : super(key: key);
+  const ReportScreen({
+    Key? key,
+    required this.apiService,
+    required this.storageService,
+  }) : super(key: key);
 
   @override
   State<ReportScreen> createState() => _ReportScreenState();
@@ -74,8 +80,16 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
   void initState() {
     super.initState();
     _dateController.text = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    _loadPromotorNames();
     _idController.addListener(_onIdChanged);
+    _loadInitialData();
+  }
+
+  Future<void> _loadInitialData() async {
+    final savedId = await widget.storageService.getSavedEmployeeId();
+    if (savedId != null && savedId.isNotEmpty && mounted) {
+      _idController.text = savedId;
+    }
+    await _loadPromotorNames();
   }
 
   Future<void> _loadPromotorNames() async {
@@ -91,6 +105,9 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
 
   void _onIdChanged() {
     final id = _idController.text.trim();
+    if (id.isNotEmpty) {
+      widget.storageService.setSavedEmployeeId(id);
+    }
     if (_promotorNames.containsKey(id)) {
       _nameController.text = _promotorNames[id]!;
     } else {

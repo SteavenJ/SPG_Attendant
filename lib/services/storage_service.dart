@@ -3,6 +3,29 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class StorageService {
   static const String keyEvents = 'attendance_events';
+  static const String keySavedEmployeeId = 'saved_employee_id';
+
+  // Save the remembered employee ID
+  Future<void> setSavedEmployeeId(String id) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (id.trim().isEmpty) {
+      await prefs.remove(keySavedEmployeeId);
+    } else {
+      await prefs.setString(keySavedEmployeeId, id.trim());
+    }
+  }
+
+  // Get the remembered employee ID
+  Future<String?> getSavedEmployeeId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(keySavedEmployeeId);
+  }
+
+  // Clear remembered employee ID
+  Future<void> clearSavedEmployeeId() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(keySavedEmployeeId);
+  }
 
   // Save an event locally
   Future<void> saveEvent(String timestamp, String employeeId, String type) async {

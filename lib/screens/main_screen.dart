@@ -40,6 +40,7 @@ class _MainScreenState extends State<MainScreen> {
       ),
       ReportScreen(
         apiService: widget.apiService,
+        storageService: widget.storageService,
       ),
     ];
 

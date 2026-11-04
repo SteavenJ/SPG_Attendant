@@ -48,6 +48,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     });
     _fetchLocation();
     _fetchPromotors();
+    _loadSavedEmployeeId();
+  }
+
+  Future<void> _loadSavedEmployeeId() async {
+    final savedId = await widget.storageService.getSavedEmployeeId();
+    if (savedId != null && savedId.isNotEmpty && mounted) {
+      _employeeIdController.text = savedId;
+    }
     _onEmployeeIdChanged();
   }
 
@@ -126,6 +134,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   Future<void> _onEmployeeIdChanged() async {
     final empId = _employeeIdController.text.trim();
+    if (empId.isNotEmpty) {
+      await widget.storageService.setSavedEmployeeId(empId);
+    }
     final state = await widget.storageService.getClockStateToday(empId);
     final hours = await widget.storageService.getWeeklyHours(empId);
     
