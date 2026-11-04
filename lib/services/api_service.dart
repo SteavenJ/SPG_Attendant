@@ -236,7 +236,7 @@ class ApiService {
 
       if (response.statusCode == 200 || response.statusCode == 302) {
         final Map<String, dynamic> data = jsonDecode(response.body);
-        if (data['status'] == 'success') {
+        if (data['status'] == 'success' && data['data'] != null) {
           return data;
         }
       }
@@ -253,7 +253,7 @@ class ApiService {
         final response = await client.get(uri);
         if (response.statusCode == 200 || response.statusCode == 302) {
           final Map<String, dynamic> data = jsonDecode(response.body);
-          if (data['status'] == 'success') {
+          if (data['status'] == 'success' && data['data'] != null) {
             return data;
           }
         }

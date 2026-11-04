@@ -362,6 +362,7 @@ class _ReportScreenState extends State<ReportScreen>
     });
 
     final salesData = {
+      'action': 'submit_penjualan',
       'id': _idController.text.trim(),
       'nama': _nameController.text.trim(),
       'lawQtyOs': lawQtyOs,
