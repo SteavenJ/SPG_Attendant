@@ -219,6 +219,7 @@ class ApiService {
     required String employeeId,
     String? toko,
     String? tanggal,
+    String? periode,
   }) async {
     try {
       final body = jsonEncode({
@@ -226,6 +227,7 @@ class ApiService {
         'employeeId': employeeId,
         if (toko != null && toko.isNotEmpty) 'toko': toko,
         if (tanggal != null && tanggal.isNotEmpty) 'tanggal': tanggal,
+        if (periode != null && periode.isNotEmpty) 'periode': periode,
       });
 
       final response = await client.post(
@@ -248,6 +250,7 @@ class ApiService {
         };
         if (toko != null && toko.isNotEmpty) queryParams['toko'] = toko;
         if (tanggal != null && tanggal.isNotEmpty) queryParams['tanggal'] = tanggal;
+        if (periode != null && periode.isNotEmpty) queryParams['periode'] = periode;
 
         final uri = Uri.parse(salesScriptUrls[0]).replace(queryParameters: queryParams);
         final response = await client.get(uri);

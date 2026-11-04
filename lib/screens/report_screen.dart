@@ -92,6 +92,8 @@ class _ReportScreenState extends State<ReportScreen>
   List<String> _availableStores = [];
   String? _selectedFilterStore;
   String? _selectedFilterDate;
+  String? _selectedFilterPeriod;
+  List<String> _availablePeriods = [];
   bool _isAdminHistory = false;
 
   // Pencapaian State
@@ -108,6 +110,8 @@ class _ReportScreenState extends State<ReportScreen>
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(_onTabChanged);
     _dateController.text = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    _selectedFilterPeriod = DateFormat('yyyy-MM').format(DateTime.now());
+    _availablePeriods = [_selectedFilterPeriod!];
     _idController.addListener(_onIdChanged);
     _loadInitialData();
   }
@@ -190,15 +194,80 @@ class _ReportScreenState extends State<ReportScreen>
       employeeId: empId,
       toko: _selectedFilterStore,
       tanggal: _selectedFilterDate,
+      periode: _selectedFilterPeriod,
     );
 
     if (mounted) {
       setState(() {
         _isLoadingHistory = false;
         if (data != null && data['status'] == 'success') {
-          _salesHistory = data['data'] as List<dynamic>? ?? [];
-          _historyTotalAmount = (data['totalAmount'] as num?)?.toInt() ?? 0;
-          _historyTotalTransactions = (data['totalCount'] as num?)?.toInt() ?? _salesHistory.length;
+          final rawList = data['data'] as List<dynamic>? ?? [];
+
+          // Kumpulkan periode yang tersedia
+          final Set<String> periodsFound = {};
+          final currentMonth = DateFormat('yyyy-MM').format(DateTime.now());
+          periodsFound.add(currentMonth);
+          if (_selectedFilterPeriod != null && _selectedFilterPeriod != 'all') {
+            periodsFound.add(_selectedFilterPeriod!);
+          }
+
+          if (data['periods'] != null) {
+            for (var p in data['periods']) {
+              if (p != null && p.toString().isNotEmpty) {
+                periodsFound.add(p.toString());
+              }
+            }
+          }
+
+          for (var item in rawList) {
+            final itemMap = Map<String, dynamic>.from(item as Map);
+            final p = itemMap['periode']?.toString();
+            if (p != null && p.isNotEmpty) {
+              periodsFound.add(p);
+            } else {
+              final rawDate = itemMap['tanggal']?.toString() ?? itemMap['timestamp']?.toString() ?? '';
+              if (rawDate.length >= 7) {
+                periodsFound.add(rawDate.substring(0, 7));
+              }
+            }
+          }
+
+          _availablePeriods = periodsFound.toList()..sort((a, b) => b.compareTo(a));
+
+          // Filter client-side jika backend mengembalikan data tanpa filter periode
+          List<dynamic> filteredList = rawList;
+          if (_selectedFilterPeriod != null &&
+              _selectedFilterPeriod != 'all' &&
+              _selectedFilterPeriod!.isNotEmpty) {
+            filteredList = rawList.where((item) {
+              final itemMap = Map<String, dynamic>.from(item as Map);
+              final p = itemMap['periode']?.toString();
+              if (p != null && p.isNotEmpty) {
+                return p == _selectedFilterPeriod;
+              }
+              final rawDate = itemMap['tanggal']?.toString() ?? itemMap['timestamp']?.toString() ?? '';
+              return rawDate.startsWith(_selectedFilterPeriod!);
+            }).toList();
+          }
+
+          // Filter tanggal client-side jika dipilih
+          if (_selectedFilterDate != null && _selectedFilterDate!.isNotEmpty) {
+            filteredList = filteredList.where((item) {
+              final itemMap = Map<String, dynamic>.from(item as Map);
+              final tgl = itemMap['tanggal']?.toString() ?? '';
+              return tgl == _selectedFilterDate;
+            }).toList();
+          }
+
+          int calculatedTotal = 0;
+          for (var item in filteredList) {
+            final itemMap = Map<String, dynamic>.from(item as Map);
+            calculatedTotal += (itemMap['total'] as num?)?.toInt() ?? 0;
+          }
+
+          _salesHistory = filteredList;
+          _historyTotalAmount = calculatedTotal;
+          _historyTotalTransactions = filteredList.length;
           _isAdminHistory = data['isAdmin'] == true || empId == '101';
           if (data['stores'] != null) {
             _availableStores = List<String>.from(data['stores']);
@@ -209,6 +278,32 @@ class _ReportScreenState extends State<ReportScreen>
         }
       });
     }
+  }
+
+  bool get _isFilterActive {
+    final currentMonth = DateFormat('yyyy-MM').format(DateTime.now());
+    return (_selectedFilterPeriod != null && _selectedFilterPeriod != currentMonth) ||
+        _selectedFilterStore != null ||
+        _selectedFilterDate != null;
+  }
+
+  String _formatIndonesianPeriod(String period) {
+    if (period == 'all' || period.isEmpty) return 'Semua Periode';
+    try {
+      final parts = period.split('-');
+      if (parts.length == 2) {
+        final y = int.parse(parts[0]);
+        final m = int.parse(parts[1]);
+        const months = [
+          'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+          'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+        ];
+        if (m >= 1 && m <= 12) {
+          return '${months[m - 1]} $y';
+        }
+      }
+    } catch (_) {}
+    return period;
   }
 
   String _formatCurrency(num value) {
@@ -1645,47 +1740,104 @@ class _ReportScreenState extends State<ReportScreen>
             ),
           ),
 
-          // FILTER ADMIN (Hanya Tampil Jika ID 101)
-          if (_isAdminHistory)
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).cardColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+          // FILTER & PERIODE CONTAINER (Tampil untuk SPG & Admin)
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: _isAdminHistory
+                    ? Colors.amber.withValues(alpha: 0.4)
+                    : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      _isAdminHistory ? Icons.admin_panel_settings : Icons.calendar_month,
+                      color: _isAdminHistory ? Colors.amber : const Color(0xFF3B82F6),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _isAdminHistory ? 'Filter & Periode Admin' : 'Filter Periode & Tanggal',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: _isAdminHistory ? Colors.amber : const Color(0xFF3B82F6),
+                      ),
+                    ),
+                    const Spacer(),
+                    if (_isFilterActive)
+                      InkWell(
+                        onTap: () {
+                          setState(() {
+                            _selectedFilterPeriod = DateFormat('yyyy-MM').format(DateTime.now());
+                            _selectedFilterStore = null;
+                            _selectedFilterDate = null;
+                          });
+                          _loadSalesHistory(showSpinner: true);
+                        },
+                        child: Text(
+                          'Reset Filter',
+                          style: TextStyle(
+                            color: Colors.red.shade400,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                if (_isAdminHistory) ...[
+                  // Row 1 Admin: Periode & Toko
                   Row(
                     children: [
-                      const Icon(Icons.admin_panel_settings, color: Colors.amber, size: 18),
-                      const SizedBox(width: 6),
-                      const Text(
-                        'Filter Admin',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.amber),
-                      ),
-                      const Spacer(),
-                      if (_selectedFilterStore != null || _selectedFilterDate != null)
-                        InkWell(
-                          onTap: () {
+                      // Periode Dropdown
+                      Expanded(
+                        flex: 5,
+                        child: DropdownButtonFormField<String>(
+                          value: _selectedFilterPeriod,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            labelText: 'Periode Bulan',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          items: [
+                            ..._availablePeriods.map((period) {
+                              final isCurrent = period == DateFormat('yyyy-MM').format(DateTime.now());
+                              return DropdownMenuItem<String>(
+                                value: period,
+                                child: Text(
+                                  '${_formatIndonesianPeriod(period)}${isCurrent ? " (Bulan Ini)" : ""}',
+                                  style: const TextStyle(fontSize: 12),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            }),
+                            const DropdownMenuItem<String>(
+                              value: 'all',
+                              child: Text('Semua Periode (All-Time)', style: TextStyle(fontSize: 12)),
+                            ),
+                          ],
+                          onChanged: (val) {
                             setState(() {
-                              _selectedFilterStore = null;
+                              _selectedFilterPeriod = val;
                               _selectedFilterDate = null;
                             });
                             _loadSalesHistory(showSpinner: true);
                           },
-                          child: Text(
-                            'Reset Filter',
-                            style: TextStyle(color: Colors.red.shade400, fontSize: 12, fontWeight: FontWeight.bold),
-                          ),
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
+                      ),
+                      const SizedBox(width: 8),
                       // Filter Toko Dropdown
                       Expanded(
                         flex: 5,
@@ -1718,10 +1870,86 @@ class _ReportScreenState extends State<ReportScreen>
                           },
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      // Filter Tanggal Button
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  // Row 2 Admin: Tanggal Picker
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final now = DateTime.now();
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: _selectedFilterDate != null
+                            ? DateTime.tryParse(_selectedFilterDate!) ?? now
+                            : now,
+                        firstDate: DateTime(2024),
+                        lastDate: DateTime(2030),
+                      );
+                      if (picked != null) {
+                        setState(() {
+                          _selectedFilterDate = DateFormat('yyyy-MM-dd').format(picked);
+                        });
+                        _loadSalesHistory(showSpinner: true);
+                      }
+                    },
+                    icon: const Icon(Icons.calendar_today, size: 14),
+                    label: Text(
+                      _selectedFilterDate != null ? 'Tanggal: $_selectedFilterDate' : 'Semua Tanggal (Sesuai Periode)',
+                      style: const TextStyle(fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 38),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ] else ...[
+                  // SPG Mode: Periode Dropdown & Tanggal Picker Berdampingan
+                  Row(
+                    children: [
+                      // Periode Dropdown
                       Expanded(
-                        flex: 5,
+                        flex: 6,
+                        child: DropdownButtonFormField<String>(
+                          value: _selectedFilterPeriod,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            labelText: 'Periode Bulan',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          items: [
+                            ..._availablePeriods.map((period) {
+                              final isCurrent = period == DateFormat('yyyy-MM').format(DateTime.now());
+                              return DropdownMenuItem<String>(
+                                value: period,
+                                child: Text(
+                                  '${_formatIndonesianPeriod(period)}${isCurrent ? " (Bulan Ini)" : ""}',
+                                  style: const TextStyle(fontSize: 12),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            }),
+                            const DropdownMenuItem<String>(
+                              value: 'all',
+                              child: Text('Semua Periode (All-Time)', style: TextStyle(fontSize: 12)),
+                            ),
+                          ],
+                          onChanged: (val) {
+                            setState(() {
+                              _selectedFilterPeriod = val;
+                              _selectedFilterDate = null;
+                            });
+                            _loadSalesHistory(showSpinner: true);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Filter Tanggal
+                      Expanded(
+                        flex: 4,
                         child: OutlinedButton.icon(
                           onPressed: () async {
                             final now = DateTime.now();
@@ -1755,8 +1983,9 @@ class _ReportScreenState extends State<ReportScreen>
                     ],
                   ),
                 ],
-              ),
+              ],
             ),
+          ),
 
           // SUMMARY STATS (Total Transaksi & Total Nilai)
           Padding(
@@ -1764,18 +1993,32 @@ class _ReportScreenState extends State<ReportScreen>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  '$_historyTotalTransactions Transaksi',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey.shade600,
-                    fontWeight: FontWeight.w600,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$_historyTotalTransactions Transaksi',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      _selectedFilterPeriod == 'all'
+                          ? 'Seluruh Periode (All-Time)'
+                          : 'Periode ${_formatIndonesianPeriod(_selectedFilterPeriod ?? "")}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
                 ),
                 Text(
                   'Total: Rp ${_formatCurrency(_historyTotalAmount)}',
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 15,
                     color: Color(0xFF10B981),
                     fontWeight: FontWeight.bold,
                   ),
