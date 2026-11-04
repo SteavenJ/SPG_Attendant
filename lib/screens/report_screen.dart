@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -42,8 +43,12 @@ class ReportScreen extends StatefulWidget {
   State<ReportScreen> createState() => _ReportScreenState();
 }
 
-class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClientMixin {
+class _ReportScreenState extends State<ReportScreen>
+    with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
+
+  late TabController _tabController;
+  Timer? _debounceTimer;
 
   // Identitas & Tanggal
   final _idController = TextEditingController();
@@ -84,9 +89,17 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(_onTabChanged);
     _dateController.text = DateFormat('yyyy-MM-dd').format(DateTime.now());
     _idController.addListener(_onIdChanged);
     _loadInitialData();
+  }
+
+  void _onTabChanged() {
+    if (_tabController.index == 1 && mounted) {
+      _loadPencapaian(showSpinner: _pencapaianData == null);
+    }
   }
 
   Future<void> _loadInitialData() async {
@@ -143,10 +156,20 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
     } else {
       _nameController.text = '';
     }
+
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 600), () {
+      if (mounted) {
+        _loadPencapaian(showSpinner: false);
+      }
+    });
   }
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
+    _tabController.removeListener(_onTabChanged);
+    _tabController.dispose();
     _idController.dispose();
     _nameController.dispose();
     _dateController.dispose();
@@ -887,41 +910,41 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
   Widget build(BuildContext context) {
     super.build(context);
 
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Laporan & Pencapaian'),
-          centerTitle: true,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Muat Ulang',
-              onPressed: () {
-                _loadPromotorNames();
-                _loadPencapaian(showSpinner: true);
-              },
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Laporan & Pencapaian'),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Muat Ulang',
+            onPressed: () {
+              _loadPromotorNames(forceRefresh: true);
+              _loadPencapaian(showSpinner: true);
+            },
+          ),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: const Color(0xFF10B981),
+          indicatorWeight: 3,
+          labelColor: const Color(0xFF10B981),
+          unselectedLabelColor: Colors.grey,
+          tabs: const [
+            Tab(
+              icon: Icon(Icons.point_of_sale),
+              text: 'Penjualan',
+            ),
+            Tab(
+              icon: Icon(Icons.emoji_events_outlined),
+              text: 'Pencapaian',
             ),
           ],
-          bottom: const TabBar(
-            indicatorColor: Color(0xFF10B981),
-            indicatorWeight: 3,
-            labelColor: Color(0xFF10B981),
-            unselectedLabelColor: Colors.grey,
-            tabs: [
-              Tab(
-                icon: Icon(Icons.point_of_sale),
-                text: 'Penjualan',
-              ),
-              Tab(
-                icon: Icon(Icons.emoji_events_outlined),
-                text: 'Pencapaian',
-              ),
-            ],
-          ),
         ),
-        body: TabBarView(
-          children: [
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
             // TAB 1: PENJUALAN
             _isLoadingNames
                 ? const Center(child: CircularProgressIndicator())
@@ -1136,7 +1159,6 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
             _buildPencapaianTab(),
           ],
         ),
-      ),
-    );
+      );
   }
 }
