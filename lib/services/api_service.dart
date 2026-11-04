@@ -162,4 +162,43 @@ class ApiService {
       return false;
     }
   }
+
+  Future<Map<String, dynamic>?> fetchPencapaian(String employeeId) async {
+    try {
+      // First try POST with action 'pencapaian' (immune to CORS/redirect issues in Flutter Web)
+      final body = jsonEncode({
+        'action': 'pencapaian',
+        'employeeId': employeeId,
+      });
+
+      final response = await client.post(
+        Uri.parse(salesScriptUrls[0]),
+        headers: {'Content-Type': 'text/plain'},
+        body: body,
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 302) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        if (data['status'] == 'success') {
+          return data;
+        }
+      }
+    } catch (_) {
+      // Fallback to GET if POST fails
+      try {
+        final uri = Uri.parse(salesScriptUrls[0]).replace(queryParameters: {
+          'action': 'pencapaian',
+          'employeeId': employeeId,
+        });
+        final response = await client.get(uri);
+        if (response.statusCode == 200 || response.statusCode == 302) {
+          final Map<String, dynamic> data = jsonDecode(response.body);
+          if (data['status'] == 'success') {
+            return data;
+          }
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
 }

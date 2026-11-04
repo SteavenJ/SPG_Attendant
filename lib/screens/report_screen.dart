@@ -33,10 +33,10 @@ class ReportScreen extends StatefulWidget {
   final StorageService storageService;
 
   const ReportScreen({
-    Key? key,
+    super.key,
     required this.apiService,
     required this.storageService,
-  }) : super(key: key);
+  });
 
   @override
   State<ReportScreen> createState() => _ReportScreenState();
@@ -73,6 +73,11 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
   bool _isLoadingNames = true;
   bool _isSubmitting = false;
 
+  // Pencapaian State
+  Map<String, dynamic>? _pencapaianData;
+  bool _isLoadingPencapaian = false;
+  String? _pencapaianError;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -90,6 +95,7 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
       _idController.text = savedId;
     }
     await _loadPromotorNames();
+    _loadPencapaian();
   }
 
   Future<void> _loadPromotorNames() async {
@@ -99,6 +105,30 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
         _promotorNames = names;
         _isLoadingNames = false;
         _onIdChanged();
+      });
+    }
+  }
+
+  Future<void> _loadPencapaian({bool showSpinner = true}) async {
+    if (showSpinner && mounted) {
+      setState(() {
+        _isLoadingPencapaian = true;
+        _pencapaianError = null;
+      });
+    }
+
+    final empId = _idController.text.trim();
+    final data = await widget.apiService.fetchPencapaian(empId);
+
+    if (mounted) {
+      setState(() {
+        _isLoadingPencapaian = false;
+        if (data != null && data['status'] == 'success') {
+          _pencapaianData = data;
+          _pencapaianError = null;
+        } else {
+          _pencapaianError = data?['message'] ?? 'Belum dapat terhubung ke data pencapaian.';
+        }
       });
     }
   }
@@ -236,6 +266,8 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
           ),
         );
         _resetFormFields();
+        // Refresh data pencapaian setelah submit
+        _loadPencapaian(showSpinner: false);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -317,6 +349,537 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
     );
   }
 
+  String _formatRp(dynamic amount) {
+    final num val = (amount is num) ? amount : (num.tryParse(amount.toString()) ?? 0);
+    return NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(val);
+  }
+
+  Widget _buildPodiumPillar({
+    required int rank,
+    required String storeName,
+    required double height,
+    required Color accentColor,
+    required List<Color> gradientColors,
+    required String medalIcon,
+  }) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Expanded(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          // Medali / Icon
+          Text(
+            medalIcon,
+            style: const TextStyle(fontSize: 28),
+          ),
+          const SizedBox(height: 4),
+          // Nama Toko
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Text(
+              storeName.isEmpty ? '-' : storeName,
+              style: TextStyle(
+                fontSize: rank == 1 ? 12 : 11,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : const Color(0xFF1E293B),
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(height: 6),
+          // Pilar Podium
+          Container(
+            height: height,
+            width: double.infinity,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: gradientColors,
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+              boxShadow: [
+                BoxShadow(
+                  color: accentColor.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                '$rank',
+                style: const TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                  letterSpacing: -1,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPencapaianTab() {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    Color cardColor = isDark ? const Color(0xFF1E293B) : Colors.white;
+
+    if (_isLoadingPencapaian && _pencapaianData == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_pencapaianData == null && _pencapaianError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.cloud_off_rounded, size: 56, color: Colors.grey),
+              const SizedBox(height: 16),
+              Text(
+                _pencapaianError!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 14, color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () => _loadPencapaian(showSpinner: true),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Coba Lagi'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final personal = _pencapaianData?['personal'] as Map<String, dynamic>?;
+    final podiumList = (_pencapaianData?['podium'] as List<dynamic>?) ?? [];
+    final leaderboardList = (_pencapaianData?['leaderboard'] as List<dynamic>?) ?? [];
+    final periode = _pencapaianData?['periode']?.toString() ?? DateFormat('yyyy-MM').format(DateTime.now());
+
+    // Cari podium data
+    String firstStore = '';
+    String secondStore = '';
+    String thirdStore = '';
+
+    for (var p in podiumList) {
+      int r = p['rank'] ?? 0;
+      String t = p['toko'] ?? '';
+      if (r == 1) firstStore = t;
+      if (r == 2) secondStore = t;
+      if (r == 3) thirdStore = t;
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => _loadPencapaian(showSpinner: true),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 1. KARTU IDENTITAS & TARGET PRIBADI TOKO
+            if (personal != null) ...[
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: isDark
+                        ? [const Color(0xFF1E3A8A), const Color(0xFF0F172A)]
+                        : [const Color(0xFF2563EB), const Color(0xFF1D4ED8)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF2563EB).withOpacity(0.3),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Halo, ${personal['name'] ?? 'SPG'}',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  const Icon(Icons.storefront, size: 16, color: Colors.white70),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    personal['toko'] ?? '-',
+                                    style: const TextStyle(fontSize: 14, color: Colors.white70),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (personal['rank'] != null && personal['rank'] > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              'Rank #${personal['rank']}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const Divider(color: Colors.white24, height: 24),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Target Toko', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                              const SizedBox(height: 2),
+                              Text(
+                                _formatRp(personal['target'] ?? 0),
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Total Realisasi', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                              const SizedBox(height: 2),
+                              Text(
+                                _formatRp(personal['actual'] ?? 0),
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // 2 KARTU INDIKATOR (PENCAPAIAN & KEKURANGAN)
+              Row(
+                children: [
+                  // Kartu Pencapaian
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: cardColor,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3), width: 1.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.03),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: const [
+                              Text(
+                                'PENCAPAIAN',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey),
+                              ),
+                              Icon(Icons.trending_up_rounded, color: Color(0xFF10B981), size: 20),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '${(personal['percentage'] ?? 0).toString()}%',
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF10B981),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Target tercapai',
+                            style: TextStyle(fontSize: 11, color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Kartu Kekurangan
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: cardColor,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFEF4444).withOpacity(0.3), width: 1.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.03),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: const [
+                              Text(
+                                'KEKURANGAN',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey),
+                              ),
+                              Icon(Icons.trending_down_rounded, color: Color(0xFFEF4444), size: 20),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '- ${(personal['shortage'] ?? 0).toString()}%',
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFEF4444),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Menuju 100%',
+                            style: TextStyle(fontSize: 11, color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+            ] else ...[
+              // Prompt jika ID belum ada
+              Container(
+                padding: const EdgeInsets.all(16),
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(
+                  color: cardColor,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.orange.withOpacity(0.5)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, color: Colors.orange),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Masukkan ID Anda di tab Penjualan untuk melihat target dan pencapaian pribadi toko Anda.',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // 2. PODIUM JUARA (TOP 3 TOKO)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: cardColor,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: const [
+                          Icon(Icons.emoji_events_rounded, color: Color(0xFFF59E0B), size: 22),
+                          SizedBox(width: 8),
+                          Text(
+                            'PODIUM TOKO',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          periode,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  // Podium Stepped Row
+                  SizedBox(
+                    height: 220,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        // RANK 2 (Silver)
+                        _buildPodiumPillar(
+                          rank: 2,
+                          storeName: secondStore,
+                          height: 90,
+                          accentColor: const Color(0xFF94A3B8),
+                          gradientColors: [const Color(0xFF94A3B8), const Color(0xFF64748B)],
+                          medalIcon: '🥈',
+                        ),
+                        // RANK 1 (Gold)
+                        _buildPodiumPillar(
+                          rank: 1,
+                          storeName: firstStore,
+                          height: 130,
+                          accentColor: const Color(0xFFF59E0B),
+                          gradientColors: [const Color(0xFFFBBF24), const Color(0xFFD97706)],
+                          medalIcon: '🥇',
+                        ),
+                        // RANK 3 (Bronze)
+                        _buildPodiumPillar(
+                          rank: 3,
+                          storeName: thirdStore,
+                          height: 65,
+                          accentColor: const Color(0xFFD97706),
+                          gradientColors: [const Color(0xFFD97706), const Color(0xFFB45309)],
+                          medalIcon: '🥉',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // 3. LEADERBOARD (Peringkat 4 ke Bawah - Nama Toko Saja)
+            if (leaderboardList.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                child: Text(
+                  'Peringkat Toko Lainnya',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ...leaderboardList.map((item) {
+                final rank = item['rank'] ?? 0;
+                final toko = item['toko'] ?? '-';
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: cardColor,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.02),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withOpacity(0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: Text(
+                            '$rank',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      const Icon(Icons.storefront_outlined, size: 20, color: Colors.grey),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          toko,
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              const SizedBox(height: 40),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -327,6 +890,16 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
         appBar: AppBar(
           title: const Text('Laporan & Pencapaian'),
           centerTitle: true,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Muat Ulang',
+              onPressed: () {
+                _loadPromotorNames();
+                _loadPencapaian(showSpinner: true);
+              },
+            ),
+          ],
           bottom: const TabBar(
             indicatorColor: Color(0xFF10B981),
             indicatorWeight: 3,
@@ -556,41 +1129,8 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
                     ),
                   ),
 
-            // TAB 2: PENCAPAIAN (Placeholder)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF10B981).withOpacity(0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.emoji_events_rounded,
-                        size: 64,
-                        color: Color(0xFF10B981),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Pencapaian Target SPG',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Sub-halaman Pencapaian sedang dalam proses pembangunan dan akan segera hadir.',
-                      style: TextStyle(fontSize: 14, color: Colors.grey),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            // TAB 2: PENCAPAIAN
+            _buildPencapaianTab(),
           ],
         ),
       ),
