@@ -380,6 +380,7 @@ class _ReportScreenState extends State<ReportScreen>
   Widget _buildPodiumPillar({
     required int rank,
     required String storeName,
+    num? percentage,
     required double height,
     required Color accentColor,
     required List<Color> gradientColors,
@@ -411,16 +412,32 @@ class _ReportScreenState extends State<ReportScreen>
                 ),
               ],
             ),
-            child: Text(
-              storeName.isEmpty ? '-' : storeName,
-              style: TextStyle(
-                fontSize: rank == 1 ? 12 : 11,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : const Color(0xFF1E293B),
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  storeName.isEmpty ? '-' : storeName,
+                  style: TextStyle(
+                    fontSize: rank == 1 ? 12 : 11,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : const Color(0xFF1E293B),
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (percentage != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    '${percentage.toString()}%',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: accentColor,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
           const SizedBox(height: 6),
@@ -500,17 +517,32 @@ class _ReportScreenState extends State<ReportScreen>
     final leaderboardList = (_pencapaianData?['leaderboard'] as List<dynamic>?) ?? [];
     final periode = _pencapaianData?['periode']?.toString() ?? DateFormat('yyyy-MM').format(DateTime.now());
 
+    final bool isAdmin = _pencapaianData?['isAdmin'] == true || personal?['isAdmin'] == true;
+
     // Cari podium data
     String firstStore = '';
+    num? firstPct;
     String secondStore = '';
+    num? secondPct;
     String thirdStore = '';
+    num? thirdPct;
 
     for (var p in podiumList) {
       int r = p['rank'] ?? 0;
       String t = p['toko'] ?? '';
-      if (r == 1) firstStore = t;
-      if (r == 2) secondStore = t;
-      if (r == 3) thirdStore = t;
+      num? pct = (p['percentage'] ?? p['persentase']) as num?;
+      if (r == 1) {
+        firstStore = t;
+        firstPct = pct;
+      }
+      if (r == 2) {
+        secondStore = t;
+        secondPct = pct;
+      }
+      if (r == 3) {
+        thirdStore = t;
+        thirdPct = pct;
+      }
     }
 
     return RefreshIndicator(
@@ -555,8 +587,33 @@ class _ReportScreenState extends State<ReportScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              if (isAdmin) ...[
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 6),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.admin_panel_settings, size: 14, color: Colors.black87),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'MODE ADMIN',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                               Text(
-                                'Halo, ${personal['name'] ?? 'SPG'}',
+                                'Halo, ${personal['name'] ?? (isAdmin ? 'Admin' : 'SPG')}',
                                 style: const TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -566,7 +623,7 @@ class _ReportScreenState extends State<ReportScreen>
                               const SizedBox(height: 4),
                               Row(
                                 children: [
-                                  const Icon(Icons.storefront, size: 16, color: Colors.white70),
+                                  Icon(isAdmin ? Icons.analytics_outlined : Icons.storefront, size: 16, color: Colors.white70),
                                   const SizedBox(width: 6),
                                   Text(
                                     personal['toko'] ?? '-',
@@ -577,7 +634,7 @@ class _ReportScreenState extends State<ReportScreen>
                             ],
                           ),
                         ),
-                        if (personal['rank'] != null && personal['rank'] > 0)
+                        if (!isAdmin && personal['rank'] != null && personal['rank'] > 0)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                             decoration: BoxDecoration(
@@ -602,7 +659,10 @@ class _ReportScreenState extends State<ReportScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Target Toko', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                              Text(
+                                isAdmin ? 'Total Target Semua Toko' : 'Target Toko',
+                                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                              ),
                               const SizedBox(height: 2),
                               Text(
                                 _formatRp(personal['target'] ?? 0),
@@ -615,7 +675,10 @@ class _ReportScreenState extends State<ReportScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Total Realisasi', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                              Text(
+                                isAdmin ? 'Total Realisasi Semua Toko' : 'Total Realisasi',
+                                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                              ),
                               const SizedBox(height: 2),
                               Text(
                                 _formatRp(personal['actual'] ?? 0),
@@ -810,6 +873,7 @@ class _ReportScreenState extends State<ReportScreen>
                         _buildPodiumPillar(
                           rank: 2,
                           storeName: secondStore,
+                          percentage: secondPct,
                           height: 90,
                           accentColor: const Color(0xFF94A3B8),
                           gradientColors: [const Color(0xFF94A3B8), const Color(0xFF64748B)],
@@ -819,6 +883,7 @@ class _ReportScreenState extends State<ReportScreen>
                         _buildPodiumPillar(
                           rank: 1,
                           storeName: firstStore,
+                          percentage: firstPct,
                           height: 130,
                           accentColor: const Color(0xFFF59E0B),
                           gradientColors: [const Color(0xFFFBBF24), const Color(0xFFD97706)],
@@ -828,6 +893,7 @@ class _ReportScreenState extends State<ReportScreen>
                         _buildPodiumPillar(
                           rank: 3,
                           storeName: thirdStore,
+                          percentage: thirdPct,
                           height: 65,
                           accentColor: const Color(0xFFD97706),
                           gradientColors: [const Color(0xFFD97706), const Color(0xFFB45309)],
@@ -894,6 +960,23 @@ class _ReportScreenState extends State<ReportScreen>
                           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                         ),
                       ),
+                      if (isAdmin && (item['percentage'] != null || item['persentase'] != null)) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981).withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '${(item['percentage'] ?? item['persentase']).toString()}%',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF10B981),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 );
