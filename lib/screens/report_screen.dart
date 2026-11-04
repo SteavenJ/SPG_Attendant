@@ -720,12 +720,40 @@ class _ReportScreenState extends State<ReportScreen>
       );
     }
 
-    final personal = _pencapaianData?['personal'] as Map<String, dynamic>?;
+    final empId = _idController.text.trim();
+    final bool isAdmin = empId == '101' || _pencapaianData?['isAdmin'] == true;
+    Map<String, dynamic>? personal = _pencapaianData?['personal'] != null
+        ? Map<String, dynamic>.from(_pencapaianData!['personal'] as Map)
+        : null;
+
     final podiumList = (_pencapaianData?['podium'] as List<dynamic>?) ?? [];
     final leaderboardList = (_pencapaianData?['leaderboard'] as List<dynamic>?) ?? [];
     final periode = _pencapaianData?['periode']?.toString() ?? DateFormat('yyyy-MM').format(DateTime.now());
 
-    final bool isAdmin = _pencapaianData?['isAdmin'] == true || personal?['isAdmin'] == true;
+    // Otomatis buat data ringkasan konsolidasi untuk Mode Admin jika backend belum menyediakannya
+    if (isAdmin && personal == null) {
+      final totalStores = podiumList.length + leaderboardList.length;
+      final double totalTarget = (_pencapaianData?['totalTarget'] as num?)?.toDouble() ?? 0.0;
+      final double totalActual = (_pencapaianData?['totalActual'] as num?)?.toDouble() ?? 0.0;
+      final double totalPct = (_pencapaianData?['totalPercentage'] as num?)?.toDouble() ??
+          (totalTarget > 0 ? (totalActual / totalTarget * 100) : 0.0);
+      final double totalShortage = (_pencapaianData?['totalShortage'] as num?)?.toDouble() ??
+          (100.0 - totalPct).clamp(0.0, 100.0);
+
+      personal = {
+        'id': '101',
+        'name': 'Administrator',
+        'toko': 'Monitoring Seluruh Toko ($totalStores Toko)',
+        'isAdmin': true,
+        'rank': 0,
+        'target': totalTarget.toInt(),
+        'actual': totalActual.toInt(),
+        'percentage': double.parse(totalPct.toStringAsFixed(1)),
+        'persentase': double.parse(totalPct.toStringAsFixed(1)),
+        'shortage': double.parse(totalShortage.toStringAsFixed(1)),
+        'kekurangan': double.parse(totalShortage.toStringAsFixed(1)),
+      };
+    }
 
     // Cari podium data
     String firstStore = '';
@@ -1003,15 +1031,15 @@ class _ReportScreenState extends State<ReportScreen>
                 ],
               ),
               const SizedBox(height: 24),
-            ] else ...[
-              // Prompt jika ID belum ada
+            ] else if (!isAdmin) ...[
+              // Prompt jika ID belum ada (Hanya untuk SPG)
               Container(
                 padding: const EdgeInsets.all(16),
                 margin: const EdgeInsets.only(bottom: 20),
                 decoration: BoxDecoration(
                   color: cardColor,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.orange.withOpacity(0.5)),
+                  border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
                 ),
                 child: Row(
                   children: [
