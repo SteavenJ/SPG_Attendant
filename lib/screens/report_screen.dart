@@ -1603,6 +1603,47 @@ class _ReportScreenState extends State<ReportScreen>
             ),
           ),
 
+          // BADGE STATUS IDENTITAS & MODE AKSES
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: _isAdminHistory
+                  ? Colors.amber.withValues(alpha: 0.12)
+                  : const Color(0xFF3B82F6).withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: _isAdminHistory
+                    ? Colors.amber.withValues(alpha: 0.35)
+                    : const Color(0xFF3B82F6).withValues(alpha: 0.2),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  _isAdminHistory ? Icons.admin_panel_settings : Icons.person_pin,
+                  size: 18,
+                  color: _isAdminHistory ? Colors.amber.shade700 : const Color(0xFF3B82F6),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _isAdminHistory
+                        ? 'Mode Admin (ID: ${_idController.text.trim()}) • Menampilkan seluruh data SPG'
+                        : 'Mode SPG (ID: ${_idController.text.trim()}${_nameController.text.trim().isNotEmpty ? " - ${_nameController.text.trim()}" : ""}) • Riwayat pribadi Anda',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _isAdminHistory
+                          ? (isDark ? Colors.amber.shade300 : Colors.amber.shade900)
+                          : (isDark ? Colors.blue.shade300 : Colors.blue.shade900),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           // FILTER ADMIN (Hanya Tampil Jika ID 101)
           if (_isAdminHistory)
             Container(
