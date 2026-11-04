@@ -639,7 +639,7 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            '${(personal['percentage'] ?? 0).toString()}%',
+                            '${(personal['percentage'] ?? personal['persentase'] ?? 0).toString()}%',
                             style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
@@ -687,7 +687,7 @@ class _ReportScreenState extends State<ReportScreen> with AutomaticKeepAliveClie
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            '- ${(personal['shortage'] ?? 0).toString()}%',
+                            '- ${(personal['shortage'] ?? personal['kekurangan'] ?? 0).toString()}%',
                             style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
