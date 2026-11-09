@@ -1345,6 +1345,8 @@ class _ReportScreenState extends State<ReportScreen>
     final isEdited = item['isEdited'] == true ||
         (item['editedLabel']?.toString().trim().isNotEmpty ?? false);
     final canEdit = _canEditTransaction(item);
+    final empId = _idController.text.trim();
+    final bool isAdmin = empId == '101' || _isAdminHistory;
 
     showModalBottomSheet(
       context: context,
@@ -1379,7 +1381,7 @@ class _ReportScreenState extends State<ReportScreen>
                       rawName,
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF3B82F6)),
                     ),
-                    if (tokoName.isNotEmpty)
+                    if (isAdmin && tokoName.isNotEmpty)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
@@ -1499,6 +1501,8 @@ class _ReportScreenState extends State<ReportScreen>
         (item['editedLabel']?.toString().trim().isNotEmpty ?? false);
     final editedLabel = item['editedLabel']?.toString().trim() ?? '';
     final canEdit = _canEditTransaction(item);
+    final empId = _idController.text.trim();
+    final bool isAdmin = empId == '101' || _isAdminHistory;
 
     showModalBottomSheet(
       context: context,
@@ -1549,7 +1553,7 @@ class _ReportScreenState extends State<ReportScreen>
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                if (tokoName.isNotEmpty)
+                                if (isAdmin && tokoName.isNotEmpty)
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
@@ -1594,7 +1598,7 @@ class _ReportScreenState extends State<ReportScreen>
                                   ),
                               ],
                             ),
-                            if (tokoName.isNotEmpty)
+                            if (isAdmin && tokoName.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(top: 2),
                                 child: Text(
@@ -2886,7 +2890,7 @@ class _ReportScreenState extends State<ReportScreen>
                                       letterSpacing: 0.3,
                                     ),
                                   ),
-                                  if (tokoName.isNotEmpty)
+                                  if (_isAdminHistory && tokoName.isNotEmpty)
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
