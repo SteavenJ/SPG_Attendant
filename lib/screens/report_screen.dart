@@ -1341,6 +1341,9 @@ class _ReportScreenState extends State<ReportScreen>
     final rawDate = item['tanggal']?.toString() ?? item['timestamp']?.toString() ?? '';
     final formattedDate = _formatIndonesianDate(rawDate);
     final totalVal = (item['total'] as num?)?.toInt() ?? 0;
+    final tokoName = item['toko']?.toString().trim() ?? '';
+    final isEdited = item['isEdited'] == true ||
+        (item['editedLabel']?.toString().trim().isNotEmpty ?? false);
     final canEdit = _canEditTransaction(item);
 
     showModalBottomSheet(
@@ -1367,9 +1370,59 @@ class _ReportScreenState extends State<ReportScreen>
                     ),
                   ),
                 ),
-                Text(
-                  rawName,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF3B82F6)),
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    Text(
+                      rawName,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF3B82F6)),
+                    ),
+                    if (tokoName.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF3B82F6).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          tokoName,
+                          style: const TextStyle(
+                            color: Color(0xFF3B82F6),
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    if (isEdited)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: const Color(0xFFF59E0B).withValues(alpha: 0.35),
+                            width: 0.8,
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.edit_note, size: 12, color: Color(0xFFD97706)),
+                            SizedBox(width: 3),
+                            Text(
+                              'Edited',
+                              style: TextStyle(
+                                color: Color(0xFFD97706),
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -1440,8 +1493,11 @@ class _ReportScreenState extends State<ReportScreen>
     final rawDate = item['tanggal']?.toString() ?? item['timestamp']?.toString() ?? '';
     final formattedDate = _formatIndonesianDate(rawDate);
     final timestamp = item['timestamp']?.toString() ?? '';
-    final tokoName = item['toko']?.toString() ?? '';
+    final tokoName = item['toko']?.toString().trim() ?? '';
     final totalVal = (item['total'] as num?)?.toInt() ?? 0;
+    final isEdited = item['isEdited'] == true ||
+        (item['editedLabel']?.toString().trim().isNotEmpty ?? false);
+    final editedLabel = item['editedLabel']?.toString().trim() ?? '';
     final canEdit = _canEditTransaction(item);
 
     showModalBottomSheet(
@@ -1476,23 +1532,78 @@ class _ReportScreenState extends State<ReportScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            rawName,
-                            style: const TextStyle(
-                              color: Color(0xFF3B82F6),
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                Text(
+                                  rawName,
+                                  style: const TextStyle(
+                                    color: Color(0xFF3B82F6),
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                if (tokoName.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF3B82F6).withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      tokoName,
+                                      style: const TextStyle(
+                                        color: Color(0xFF3B82F6),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                if (isEdited)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(
+                                        color: const Color(0xFFF59E0B).withValues(alpha: 0.35),
+                                        width: 0.8,
+                                      ),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.edit_note, size: 12, color: Color(0xFFD97706)),
+                                        SizedBox(width: 3),
+                                        Text(
+                                          'Edited',
+                                          style: TextStyle(
+                                            color: Color(0xFFD97706),
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
                             ),
-                          ),
-                          if (tokoName.isNotEmpty)
-                            Text(
-                              'Toko: $tokoName',
-                              style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-                            ),
-                        ],
+                            if (tokoName.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  'Toko: $tokoName',
+                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1516,6 +1627,31 @@ class _ReportScreenState extends State<ReportScreen>
                     formattedDate + (timestamp.isNotEmpty ? ' • $timestamp' : ''),
                     style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
                   ),
+                  if (isEdited) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline, color: Color(0xFFD97706), size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              editedLabel.isNotEmpty
+                                  ? 'Transaksi ini telah diperbarui ($editedLabel).'
+                                  : 'Transaksi ini telah diperbarui (Edited).',
+                              style: const TextStyle(fontSize: 12, color: Color(0xFFB45309)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const Divider(height: 24),
                   const Text(
                     'Rincian Produk Terjual',
@@ -2703,7 +2839,9 @@ class _ReportScreenState extends State<ReportScreen>
               final formattedDate = _formatIndonesianDate(rawDate);
               final totalVal = (itemMap['total'] as num?)?.toInt() ?? 0;
               final formattedAmount = _formatCurrency(totalVal);
-              final tokoName = itemMap['toko']?.toString() ?? '';
+              final tokoName = itemMap['toko']?.toString().trim() ?? '';
+              final bool isEdited = itemMap['isEdited'] == true ||
+                  (itemMap['editedLabel']?.toString().trim().isNotEmpty ?? false);
 
               return Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
@@ -2733,23 +2871,22 @@ class _ReportScreenState extends State<ReportScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // NAMA SPG (Indigo / Blue font sesuai Data Penjualan.jpeg)
-                              Row(
+                              // NAMA SPG, NAMA TOKO, & BADGE EDITED
+                              Wrap(
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 6,
+                                runSpacing: 4,
                                 children: [
-                                  Flexible(
-                                    child: Text(
-                                      rawName,
-                                      style: const TextStyle(
-                                        color: Color(0xFF3B82F6),
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 14,
-                                        letterSpacing: 0.3,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
+                                  Text(
+                                    rawName,
+                                    style: const TextStyle(
+                                      color: Color(0xFF3B82F6),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
+                                      letterSpacing: 0.3,
                                     ),
                                   ),
-                                  if (_isAdminHistory && tokoName.isNotEmpty) ...[
-                                    const SizedBox(width: 8),
+                                  if (tokoName.isNotEmpty)
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
@@ -2765,7 +2902,34 @@ class _ReportScreenState extends State<ReportScreen>
                                         ),
                                       ),
                                     ),
-                                  ],
+                                  if (isEdited)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(
+                                          color: const Color(0xFFF59E0B).withValues(alpha: 0.35),
+                                          width: 0.8,
+                                        ),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.edit_note, size: 13, color: Color(0xFFD97706)),
+                                          SizedBox(width: 3),
+                                          Text(
+                                            'Edited',
+                                            style: TextStyle(
+                                              color: Color(0xFFD97706),
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: 0.2,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                 ],
                               ),
                               const SizedBox(height: 4),
