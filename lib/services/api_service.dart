@@ -264,4 +264,39 @@ class ApiService {
     }
     return null;
   }
+
+  Future<Map<String, dynamic>> editSalesReport(Map<String, dynamic> updateData) async {
+    try {
+      final body = jsonEncode({
+        'action': 'edit_penjualan',
+        ...updateData,
+      });
+
+      final response = await client.post(
+        Uri.parse(salesScriptUrls[0]),
+        headers: {'Content-Type': 'text/plain'},
+        body: body,
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 302) {
+        try {
+          final Map<String, dynamic> res = jsonDecode(response.body);
+          return res;
+        } catch (_) {
+          if (response.body.contains('"status":"success"') || response.body.contains('"status": "success"')) {
+            return {'status': 'success', 'message': 'Data transaksi berhasil diperbarui.'};
+          }
+        }
+      }
+      return {
+        'status': 'error',
+        'message': 'Gagal memperbarui transaksi (kode ${response.statusCode}).'
+      };
+    } catch (e) {
+      return {
+        'status': 'error',
+        'message': 'Gagal menghubungi server: $e'
+      };
+    }
+  }
 }

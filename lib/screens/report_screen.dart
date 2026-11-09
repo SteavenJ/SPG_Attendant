@@ -559,6 +559,7 @@ class _ReportScreenState extends State<ReportScreen>
     List<TextInputFormatter>? inputFormatters,
     String? hintText,
     String? prefixText,
+    ValueChanged<String>? onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
@@ -567,6 +568,7 @@ class _ReportScreenState extends State<ReportScreen>
         readOnly: readOnly,
         keyboardType: keyboardType,
         inputFormatters: inputFormatters,
+        onChanged: onChanged,
         decoration: InputDecoration(
           labelText: label,
           hintText: hintText,
@@ -1297,6 +1299,142 @@ class _ReportScreenState extends State<ReportScreen>
     );
   }
 
+  bool _canEditTransaction(Map<String, dynamic> item) {
+    final empId = _idController.text.trim();
+    final bool isAdmin = empId == '101' || _isAdminHistory;
+    if (isAdmin) return true; // Admin memiliki hak akses penuh
+
+    try {
+      final rawDate = item['tanggal']?.toString() ?? item['timestamp']?.toString() ?? '';
+      if (rawDate.isEmpty) return false;
+
+      DateTime txDate;
+      if (rawDate.contains('T')) {
+        txDate = DateTime.parse(rawDate);
+      } else if (rawDate.contains(' ')) {
+        final p = rawDate.split(' ')[0].split('-');
+        txDate = DateTime(int.parse(p[0]), int.parse(p[1]), int.parse(p[2]));
+      } else {
+        final p = rawDate.split('-');
+        txDate = DateTime(int.parse(p[0]), int.parse(p[1]), int.parse(p[2]));
+      }
+
+      final now = DateTime.now();
+      // 1. Cek bulan berjalan
+      if (txDate.year != now.year || txDate.month != now.month) {
+        return false;
+      }
+
+      // 2. Cek batas maksimal 7 hari terakhir (seminggu terakhir)
+      final todayMidnight = DateTime(now.year, now.month, now.day);
+      final txMidnight = DateTime(txDate.year, txDate.month, txDate.day);
+      final diffDays = todayMidnight.difference(txMidnight).inDays;
+
+      return diffDays >= 0 && diffDays <= 7;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _showTransactionActionsModal(Map<String, dynamic> item) {
+    final rawName = item['nama']?.toString().toUpperCase() ?? 'SPG';
+    final rawDate = item['tanggal']?.toString() ?? item['timestamp']?.toString() ?? '';
+    final formattedDate = _formatIndonesianDate(rawDate);
+    final totalVal = (item['total'] as num?)?.toInt() ?? 0;
+    final canEdit = _canEditTransaction(item);
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade400,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Text(
+                  rawName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF3B82F6)),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$formattedDate • Total: Rp ${_formatCurrency(totalVal)}',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+                const Divider(height: 24),
+                ListTile(
+                  leading: const Icon(Icons.receipt_long_outlined, color: Color(0xFF3B82F6)),
+                  title: const Text('Lihat Rincian Penjualan', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Detail produk Lawrence, Superbed, Sofa, Busa', style: TextStyle(fontSize: 12)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showSaleDetailBottomSheet(item);
+                  },
+                ),
+                ListTile(
+                  leading: Icon(
+                    Icons.edit_note,
+                    color: canEdit ? const Color(0xFF10B981) : Colors.grey,
+                  ),
+                  title: Text(
+                    'Edit Transaksi',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: canEdit ? null : Colors.grey,
+                    ),
+                  ),
+                  subtitle: Text(
+                    canEdit
+                        ? 'Ubah nominal, Qty produk, atau nomor SO'
+                        : 'Terkunci (Maksimal 7 hari di bulan berjalan)',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: canEdit ? null : Colors.red.shade400,
+                    ),
+                  ),
+                  enabled: canEdit,
+                  onTap: canEdit
+                      ? () {
+                          Navigator.pop(ctx);
+                          _showEditSaleBottomSheet(item);
+                        }
+                      : null,
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: const Text('Batal'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _showSaleDetailBottomSheet(Map<String, dynamic> item) {
     final rawName = item['nama']?.toString().toUpperCase() ?? 'SPG';
     final rawDate = item['tanggal']?.toString() ?? item['timestamp']?.toString() ?? '';
@@ -1304,6 +1442,7 @@ class _ReportScreenState extends State<ReportScreen>
     final timestamp = item['timestamp']?.toString() ?? '';
     final tokoName = item['toko']?.toString() ?? '';
     final totalVal = (item['total'] as num?)?.toInt() ?? 0;
+    final canEdit = _canEditTransaction(item);
 
     showModalBottomSheet(
       context: context,
@@ -1430,22 +1569,501 @@ class _ReportScreenState extends State<ReportScreen>
                     ],
                   ),
                   const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1E293B),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+
+                  if (!canEdit)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.lock_outline, size: 16, color: Colors.amber.shade700),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Transaksi terkunci dari pengeditan (maksimal 7 hari di bulan berjalan).',
+                              style: TextStyle(fontSize: 12, color: Colors.amber.shade800),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  Row(
+                    children: [
+                      if (canEdit)
+                        Expanded(
+                          flex: 6,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              _showEditSaleBottomSheet(item);
+                            },
+                            icon: const Icon(Icons.edit_note, size: 18),
+                            label: const Text('Edit Transaksi', style: TextStyle(fontWeight: FontWeight.bold)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2563EB),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (canEdit) const SizedBox(width: 10),
+                      Expanded(
+                        flex: canEdit ? 4 : 10,
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text('Tutup'),
                         ),
                       ),
-                      child: const Text('Tutup'),
-                    ),
+                    ],
                   ),
                 ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showEditSaleBottomSheet(Map<String, dynamic> item) {
+    final rawDate = item['tanggal']?.toString() ?? item['timestamp']?.toString() ?? '';
+    final timestamp = item['timestamp']?.toString() ?? '';
+    final empId = item['id']?.toString() ?? _idController.text.trim();
+    final rawName = item['nama']?.toString().toUpperCase() ?? _nameController.text.trim();
+    final rowIndex = item['rowIndex'];
+
+    DateTime selectedDate = DateTime.tryParse(rawDate) ?? DateTime.now();
+    final now = DateTime.now();
+    final isAdmin = _idController.text.trim() == '101' || _isAdminHistory;
+
+    // Batas tanggal: Untuk SPG maks 7 hari terakhir di bulan berjalan
+    final firstAllowedDate = isAdmin
+        ? DateTime(2024)
+        : DateTime(now.year, now.month, (now.day - 7 < 1) ? 1 : now.day - 7);
+    final lastAllowedDate = now;
+
+    // Controller dan Inisialisasi data
+    final dateEditController = TextEditingController(text: DateFormat('yyyy-MM-dd').format(selectedDate));
+    final lawQtyOsController = TextEditingController(
+      text: (item['lawQtyOs'] ?? 0).toString() == '0' ? '' : (item['lawQtyOs'] ?? '').toString(),
+    );
+    final lawQtyNhController = TextEditingController(
+      text: (item['lawQtyNh'] ?? 0).toString() == '0' ? '' : (item['lawQtyNh'] ?? '').toString(),
+    );
+    final lawValController = TextEditingController(
+      text: ((item['lawValue'] as num?)?.toInt() ?? 0) > 0 ? _formatCurrency(item['lawValue']) : '',
+    );
+    final lawNoSoController = TextEditingController(text: item['lawNoSo']?.toString() ?? '');
+
+    final sbValController = TextEditingController(
+      text: ((item['sbValue'] as num?)?.toInt() ?? 0) > 0 ? _formatCurrency(item['sbValue']) : '',
+    );
+    final sbNoSoController = TextEditingController(text: item['sbNoSo']?.toString() ?? '');
+
+    final sofaQtyController = TextEditingController(
+      text: (item['sofaQty'] ?? 0).toString() == '0' ? '' : (item['sofaQty'] ?? '').toString(),
+    );
+    final sofaValController = TextEditingController(
+      text: ((item['sofaValue'] as num?)?.toInt() ?? 0) > 0 ? _formatCurrency(item['sofaValue']) : '',
+    );
+    final sofaNoSoController = TextEditingController(text: item['sofaNoSo']?.toString() ?? '');
+
+    final bedValController = TextEditingController(
+      text: ((item['bedValue'] as num?)?.toInt() ?? 0) > 0 ? _formatCurrency(item['bedValue']) : '',
+    );
+    final bedNoSoController = TextEditingController(text: item['bedNoSo']?.toString() ?? '');
+
+    bool isSubmitting = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            int parseVal(TextEditingController c) {
+              return int.tryParse(c.text.replaceAll('.', '').replaceAll(',', '').trim()) ?? 0;
+            }
+
+            final currentTotal = parseVal(lawValController) +
+                parseVal(sbValController) +
+                parseVal(sofaValController) +
+                parseVal(bedValController);
+
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: DraggableScrollableSheet(
+                expand: false,
+                initialChildSize: 0.85,
+                minChildSize: 0.5,
+                maxChildSize: 0.95,
+                builder: (context, scrollController) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    child: ListView(
+                      controller: scrollController,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade400,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF3B82F6).withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.edit_note, color: Color(0xFF3B82F6), size: 22),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Edit Transaksi Penjualan',
+                                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                                  ),
+                                  Text(
+                                    '$rawName • ${timestamp.isNotEmpty ? timestamp : rawDate}',
+                                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed: () => Navigator.pop(ctx),
+                            ),
+                          ],
+                        ),
+                        const Divider(height: 24),
+
+                        // FIELD TANGGAL TRANSAKSI
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.calendar_today, size: 18, color: Color(0xFF3B82F6)),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Tanggal Penjualan', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                                    Text(
+                                      _formatIndonesianDate(dateEditController.text),
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              OutlinedButton(
+                                onPressed: () async {
+                                  final picked = await showDatePicker(
+                                    context: context,
+                                    initialDate: selectedDate.isBefore(firstAllowedDate)
+                                        ? firstAllowedDate
+                                        : (selectedDate.isAfter(lastAllowedDate) ? lastAllowedDate : selectedDate),
+                                    firstDate: firstAllowedDate,
+                                    lastDate: lastAllowedDate,
+                                  );
+                                  if (picked != null) {
+                                    setModalState(() {
+                                      selectedDate = picked;
+                                      dateEditController.text = DateFormat('yyyy-MM-dd').format(picked);
+                                    });
+                                  }
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                child: const Text('Ubah Tgl', style: TextStyle(fontSize: 12)),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // 1. BRAND: LAWRENCE
+                        _buildBrandCard(
+                          brandTitle: 'LAWRENCE',
+                          accentColor: const Color(0xFFF59E0B),
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildField(
+                                    controller: lawQtyOsController,
+                                    label: 'QTY OS',
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _buildField(
+                                    controller: lawQtyNhController,
+                                    label: 'QTY NH',
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            _buildField(
+                              controller: lawValController,
+                              label: 'Value Penjualan',
+                              prefixText: 'Rp ',
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [CurrencyInputFormatter()],
+                              onChanged: (_) => setModalState(() {}),
+                            ),
+                            _buildField(
+                              controller: lawNoSoController,
+                              label: 'Nomor SO',
+                              hintText: 'Contoh: SO-12345',
+                            ),
+                          ],
+                        ),
+
+                        // 2. BRAND: SUPERBED
+                        _buildBrandCard(
+                          brandTitle: 'SUPERBED',
+                          accentColor: const Color(0xFFEA580C),
+                          children: [
+                            _buildField(
+                              controller: sbValController,
+                              label: 'Value Penjualan',
+                              prefixText: 'Rp ',
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [CurrencyInputFormatter()],
+                              onChanged: (_) => setModalState(() {}),
+                            ),
+                            _buildField(
+                              controller: sbNoSoController,
+                              label: 'Nomor SO',
+                              hintText: 'Contoh: SO-67890',
+                            ),
+                          ],
+                        ),
+
+                        // 3. BRAND: SOFA
+                        _buildBrandCard(
+                          brandTitle: 'SOFA',
+                          accentColor: const Color(0xFF10B981),
+                          children: [
+                            _buildField(
+                              controller: sofaQtyController,
+                              label: 'QTY SOFA',
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                            ),
+                            _buildField(
+                              controller: sofaValController,
+                              label: 'Value Penjualan',
+                              prefixText: 'Rp ',
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [CurrencyInputFormatter()],
+                              onChanged: (_) => setModalState(() {}),
+                            ),
+                            _buildField(
+                              controller: sofaNoSoController,
+                              label: 'Nomor SO',
+                              hintText: 'Contoh: SO-54321',
+                            ),
+                          ],
+                        ),
+
+                        // 4. BRAND: BEDDING / BUSA
+                        _buildBrandCard(
+                          brandTitle: 'BEDDING / BUSA',
+                          accentColor: const Color(0xFF6366F1),
+                          children: [
+                            _buildField(
+                              controller: bedValController,
+                              label: 'Value Penjualan',
+                              prefixText: 'Rp ',
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [CurrencyInputFormatter()],
+                              onChanged: (_) => setModalState(() {}),
+                            ),
+                            _buildField(
+                              controller: bedNoSoController,
+                              label: 'Nomor SO',
+                              hintText: 'Contoh: SO-98765',
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        // TOTAL REAL-TIME CARD
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Total Nilai Baru:',
+                                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                              ),
+                              Text(
+                                'Rp ${_formatCurrency(currentTotal)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF10B981),
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // ACTION BUTTONS: BATAL & SIMPAN
+                        Row(
+                          children: [
+                            Expanded(
+                              flex: 4,
+                              child: OutlinedButton(
+                                onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                child: const Text('Batal'),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 6,
+                              child: ElevatedButton(
+                                onPressed: isSubmitting
+                                    ? null
+                                    : () async {
+                                        setModalState(() {
+                                          isSubmitting = true;
+                                        });
+
+                                        final updateData = {
+                                          'id': empId,
+                                          'employeeId': empId,
+                                          'timestamp': timestamp,
+                                          'tanggal': dateEditController.text.trim(),
+                                          'lawQtyOs': int.tryParse(lawQtyOsController.text.trim()) ?? 0,
+                                          'lawQtyNh': int.tryParse(lawQtyNhController.text.trim()) ?? 0,
+                                          'lawValue': parseVal(lawValController),
+                                          'lawNoSo': lawNoSoController.text.trim(),
+                                          'sbValue': parseVal(sbValController),
+                                          'sbNoSo': sbNoSoController.text.trim(),
+                                          'sofaQty': int.tryParse(sofaQtyController.text.trim()) ?? 0,
+                                          'sofaValue': parseVal(sofaValController),
+                                          'sofaNoSo': sofaNoSoController.text.trim(),
+                                          'bedValue': parseVal(bedValController),
+                                          'bedNoSo': bedNoSoController.text.trim(),
+                                          if (rowIndex != null) 'rowIndex': rowIndex!,
+                                        };
+
+                                        final nav = Navigator.of(ctx);
+                                        final messenger = ScaffoldMessenger.of(context);
+                                        final result = await widget.apiService.editSalesReport(updateData);
+
+                                        if (!mounted) return;
+
+                                        setModalState(() {
+                                          isSubmitting = false;
+                                        });
+
+                                        if (result['status'] == 'success') {
+                                          nav.pop();
+                                          messenger.showSnackBar(
+                                            SnackBar(
+                                              content: Text(result['message'] ?? 'Data transaksi berhasil diperbarui.'),
+                                              backgroundColor: const Color(0xFF10B981),
+                                              behavior: SnackBarBehavior.floating,
+                                            ),
+                                          );
+                                          _loadSalesHistory(showSpinner: false);
+                                          _loadPencapaian(showSpinner: false);
+                                        } else {
+                                          messenger.showSnackBar(
+                                            SnackBar(
+                                              content: Text(result['message'] ?? 'Gagal memperbarui transaksi.'),
+                                              backgroundColor: Colors.red.shade600,
+                                              behavior: SnackBarBehavior.floating,
+                                            ),
+                                          );
+                                        }
+                                      },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF2563EB),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                child: isSubmitting
+                                    ? const SizedBox(
+                                        height: 20,
+                                        width: 20,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                      )
+                                    : const Text('Simpan Perubahan', style: TextStyle(fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
+                  );
+                },
               ),
             );
           },
@@ -2176,8 +2794,8 @@ class _ReportScreenState extends State<ReportScreen>
                         // Trailing '...' icon
                         IconButton(
                           icon: const Icon(Icons.more_horiz, color: Colors.grey),
-                          tooltip: 'Detail Penjualan',
-                          onPressed: () => _showSaleDetailBottomSheet(itemMap),
+                          tooltip: 'Pilihan Transaksi',
+                          onPressed: () => _showTransactionActionsModal(itemMap),
                         ),
                       ],
                     ),
