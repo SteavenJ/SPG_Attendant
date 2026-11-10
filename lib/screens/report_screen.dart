@@ -1470,6 +1470,35 @@ class _ReportScreenState extends State<ReportScreen>
                         }
                       : null,
                 ),
+                ListTile(
+                  leading: Icon(
+                    Icons.delete_outline,
+                    color: canEdit ? Colors.red.shade600 : Colors.grey,
+                  ),
+                  title: Text(
+                    'Hapus Transaksi',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: canEdit ? Colors.red.shade600 : Colors.grey,
+                    ),
+                  ),
+                  subtitle: Text(
+                    canEdit
+                        ? 'Hapus data penjualan ini secara permanen'
+                        : 'Terkunci (Maksimal 7 hari di bulan berjalan)',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: canEdit ? Colors.grey.shade600 : Colors.red.shade400,
+                    ),
+                  ),
+                  enabled: canEdit,
+                  onTap: canEdit
+                      ? () {
+                          Navigator.pop(ctx);
+                          _showDeleteConfirmationDialog(item);
+                        }
+                      : null,
+                ),
                 const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
@@ -1485,6 +1514,254 @@ class _ReportScreenState extends State<ReportScreen>
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+
+  void _showDeleteConfirmationDialog(Map<String, dynamic> item) {
+    final rawName = item['nama']?.toString().toUpperCase() ?? 'SPG';
+    final rawDate = item['tanggal']?.toString() ?? item['timestamp']?.toString() ?? '';
+    final formattedDate = _formatIndonesianDate(rawDate);
+    final totalVal = (item['total'] as num?)?.toInt() ?? 0;
+    final timestamp = item['timestamp']?.toString().trim() ?? '';
+    final empId = item['id']?.toString().trim() ?? _idController.text.trim();
+    final rowIndex = item['rowIndex'];
+
+    final lawNoSo = item['lawNoSo']?.toString().trim() ?? '';
+    final lawVal = (item['lawValue'] as num?)?.toInt() ?? 0;
+    final sbNoSo = item['sbNoSo']?.toString().trim() ?? '';
+    final sbVal = (item['sbValue'] as num?)?.toInt() ?? 0;
+    final sofaNoSo = item['sofaNoSo']?.toString().trim() ?? '';
+    final sofaVal = (item['sofaValue'] as num?)?.toInt() ?? 0;
+    final bedNoSo = item['bedNoSo']?.toString().trim() ?? '';
+    final bedVal = (item['bedValue'] as num?)?.toInt() ?? 0;
+
+    final List<Map<String, dynamic>> soItems = [
+      if (lawNoSo.isNotEmpty || lawVal > 0)
+        {'product': '🛏️ Lawrence', 'noSo': lawNoSo.isNotEmpty ? lawNoSo : '-', 'val': lawVal},
+      if (sbNoSo.isNotEmpty || sbVal > 0)
+        {'product': '✨ Superbed', 'noSo': sbNoSo.isNotEmpty ? sbNoSo : '-', 'val': sbVal},
+      if (sofaNoSo.isNotEmpty || sofaVal > 0)
+        {'product': '🛋️ Sofa', 'noSo': sofaNoSo.isNotEmpty ? sofaNoSo : '-', 'val': sofaVal},
+      if (bedNoSo.isNotEmpty || bedVal > 0)
+        {'product': '💤 Bedding / Busa', 'noSo': bedNoSo.isNotEmpty ? bedNoSo : '-', 'val': bedVal},
+    ];
+
+    bool isDeleting = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            final cardBg = isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC);
+            final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.warning_amber_rounded, color: Colors.red.shade600, size: 28),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Hapus Data Penjualan?',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Apakah Anda yakin ingin menghapus data penjualan ini? Tindakan ini permanen dan tidak dapat dibatalkan.',
+                      style: TextStyle(fontSize: 13, color: isDark ? Colors.grey.shade300 : Colors.grey.shade700),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // KARTU RINCIAN NO SO & VALUE UNTUK MEMASTIKAN
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: cardBg,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: borderColor),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                rawName,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF3B82F6)),
+                              ),
+                              Text(
+                                formattedDate,
+                                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                              ),
+                            ],
+                          ),
+                          const Divider(height: 18),
+                          if (soItems.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Text(
+                                'Tidak ada rincian No SO',
+                                style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.grey.shade500),
+                              ),
+                            )
+                          else
+                            ...soItems.map((sItem) {
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8.0),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            sItem['product'] as String,
+                                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                                          ),
+                                          Text(
+                                            'No SO: ${sItem['noSo']}',
+                                            style: TextStyle(
+                                              fontSize: 11.5,
+                                              color: (sItem['noSo'] != '-') ? const Color(0xFFD97706) : Colors.grey,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Text(
+                                      'Rp ${_formatCurrency(sItem['val'] as int)}',
+                                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                          const Divider(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Total Transaksi:',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                              Text(
+                                'Rp ${_formatCurrency(totalVal)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: Color(0xFF10B981),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              actions: [
+                OutlinedButton(
+                  onPressed: isDeleting ? null : () => Navigator.pop(dialogCtx),
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('Batal'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: isDeleting
+                      ? null
+                      : () async {
+                          setDialogState(() {
+                            isDeleting = true;
+                          });
+
+                          final nav = Navigator.of(dialogCtx);
+                          final messenger = ScaffoldMessenger.of(context);
+
+                          final deleteData = {
+                            'id': empId,
+                            'timestamp': timestamp,
+                            'tanggal': rawDate,
+                            if (rowIndex != null) 'rowIndex': rowIndex!,
+                          };
+
+                          final result = await widget.apiService.deleteSalesReport(deleteData);
+
+                          if (!mounted) return;
+
+                          setDialogState(() {
+                            isDeleting = false;
+                          });
+
+                          nav.pop();
+
+                          if (result['status'] == 'success') {
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(result['message'] ?? 'Data transaksi berhasil dihapus.'),
+                                backgroundColor: Colors.red.shade600,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                            _loadSalesHistory(showSpinner: false);
+                            _loadPencapaian(showSpinner: false);
+                          } else {
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(result['message'] ?? 'Gagal menghapus transaksi.'),
+                                backgroundColor: Colors.black87,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+                        },
+                  icon: isDeleting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.delete_forever, size: 18),
+                  label: Text(
+                    isDeleting ? 'Menghapus...' : 'Ya, Hapus Data',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade600,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -1735,16 +2012,16 @@ class _ReportScreenState extends State<ReportScreen>
 
                   Row(
                     children: [
-                      if (canEdit)
+                      if (canEdit) ...[
                         Expanded(
-                          flex: 6,
+                          flex: 5,
                           child: ElevatedButton.icon(
                             onPressed: () {
                               Navigator.pop(ctx);
                               _showEditSaleBottomSheet(item);
                             },
                             icon: const Icon(Icons.edit_note, size: 18),
-                            label: const Text('Edit Transaksi', style: TextStyle(fontWeight: FontWeight.bold)),
+                            label: const Text('Edit', style: TextStyle(fontWeight: FontWeight.bold)),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF2563EB),
                               foregroundColor: Colors.white,
@@ -1755,9 +2032,29 @@ class _ReportScreenState extends State<ReportScreen>
                             ),
                           ),
                         ),
-                      if (canEdit) const SizedBox(width: 10),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 4,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              _showDeleteConfirmationDialog(item);
+                            },
+                            icon: Icon(Icons.delete_outline, size: 18, color: Colors.red.shade600),
+                            label: Text('Hapus', style: TextStyle(color: Colors.red.shade600, fontWeight: FontWeight.bold)),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: Colors.red.shade300),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
                       Expanded(
-                        flex: canEdit ? 4 : 10,
+                        flex: canEdit ? 3 : 10,
                         child: OutlinedButton(
                           onPressed: () => Navigator.pop(ctx),
                           style: OutlinedButton.styleFrom(
