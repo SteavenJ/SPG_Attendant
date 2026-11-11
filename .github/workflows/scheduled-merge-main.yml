@@ -1,0 +1,32 @@
+name: Scheduled Merge Beta to Main
+
+on:
+  schedule:
+    # 16:00 UTC = 00:00 UTC+8 (Jam 00:00 Tengah Malam WITA)
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  merge_beta_to_main:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge Beta to Main and Push
+        run: |
+          git checkout main
+          git pull origin main --ff-only || true
+          git merge origin/beta --no-edit -m "Automated release: Merge beta into main at 00:00"
+          git push origin main
