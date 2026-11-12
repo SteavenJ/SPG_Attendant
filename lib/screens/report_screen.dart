@@ -955,6 +955,7 @@ class _ReportScreenState extends State<ReportScreen>
     icon = isUp
         ? Icons.arrow_drop_up_rounded
         : (isDown ? Icons.arrow_drop_down_rounded : Icons.drag_handle_rounded);
+    final bool showIcon = isUp || isDown || showPercentage;
 
     String text;
     if (showPercentage) {
@@ -971,13 +972,18 @@ class _ReportScreenState extends State<ReportScreen>
           text = '$text $compareLabel';
         }
       }
+    } else if (diff == 0) {
+      text = '=0';
     } else {
       final sign = diff > 0 ? '+' : '';
       text = '$sign$diff';
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: EdgeInsets.symmetric(
+        horizontal: showIcon ? 5 : 6,
+        vertical: 2,
+      ),
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(6),
@@ -986,7 +992,7 @@ class _ReportScreenState extends State<ReportScreen>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 15, color: fgColor),
+          if (showIcon) Icon(icon, size: 15, color: fgColor),
           Text(
             text,
             style: TextStyle(
@@ -997,6 +1003,33 @@ class _ReportScreenState extends State<ReportScreen>
           ),
         ],
       ),
+    );
+  }
+
+  /// Angka unit & badge tren kompak berdampingan (auto-wrap pada layar ekstra sempit).
+  Widget _buildUnitWithTrend({
+    required int count,
+    required int prevCount,
+    required Color accentColor,
+  }) {
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 4,
+      runSpacing: 3,
+      children: [
+        Text(
+          count > 0 ? '$count Unit' : '- Unit',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: count > 0 ? accentColor : Colors.grey,
+            fontWeight: FontWeight.w800,
+            fontSize: 15.5,
+          ),
+        ),
+        if (count > 0 || prevCount > 0)
+          _buildInlineTrendBadge(current: count, previous: prevCount),
+      ],
     );
   }
 
@@ -1054,24 +1087,11 @@ class _ReportScreenState extends State<ReportScreen>
           Expanded(
             child: Center(
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      count > 0 ? '$count Unit' : '- Unit',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: count > 0 ? accentColor : Colors.grey,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 17,
-                      ),
-                    ),
-                    if (count > 0 || prevCount > 0) ...[
-                      const SizedBox(height: 5),
-                      _buildInlineTrendBadge(current: count, previous: prevCount),
-                    ],
-                  ],
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                child: _buildUnitWithTrend(
+                  count: count,
+                  prevCount: prevCount,
+                  accentColor: accentColor,
                 ),
               ),
             ),
@@ -1090,7 +1110,7 @@ class _ReportScreenState extends State<ReportScreen>
   }) {
     return Expanded(
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -1104,19 +1124,11 @@ class _ReportScreenState extends State<ReportScreen>
               ),
             ),
             const SizedBox(height: 6),
-            Text(
-              count > 0 ? '$count Unit' : '- Unit',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: count > 0 ? accentColor : Colors.grey,
-                fontWeight: FontWeight.w800,
-                fontSize: 17,
-              ),
+            _buildUnitWithTrend(
+              count: count,
+              prevCount: prevCount,
+              accentColor: accentColor,
             ),
-            if (count > 0 || prevCount > 0) ...[
-              const SizedBox(height: 5),
-              _buildInlineTrendBadge(current: count, previous: prevCount),
-            ],
           ],
         ),
       ),
