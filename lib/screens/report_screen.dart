@@ -84,17 +84,28 @@ class _ReportScreenState extends State<ReportScreen>
   MainView _currentView = MainView.penjualan;
 
   // Daftar Penjualan State
+  List<dynamic> _rawSalesHistory = [];
   List<dynamic> _salesHistory = [];
   bool _isLoadingHistory = false;
   String? _historyError;
   int _historyTotalAmount = 0;
   int _historyTotalTransactions = 0;
+  int _historyFilteredProductUnits = 0;
   List<String> _availableStores = [];
   String? _selectedFilterStore;
   String? _selectedFilterDate;
   String? _selectedFilterPeriod;
+  String? _selectedFilterProduct;
   List<String> _availablePeriods = [];
   bool _isAdminHistory = false;
+
+  static const List<Map<String, dynamic>> _productFilterOptions = [
+    {'key': null, 'label': 'Semua Barang', 'shortLabel': 'Semua', 'color': Color(0xFF3B82F6)},
+    {'key': 'lawrence', 'label': 'Lawrence (OS & NH)', 'shortLabel': 'Lawrence', 'color': Color(0xFFF59E0B)},
+    {'key': 'superbed', 'label': 'Superbed', 'shortLabel': 'Superbed', 'color': Color(0xFFEA580C)},
+    {'key': 'sofa', 'label': 'Sofa', 'shortLabel': 'Sofa', 'color': Color(0xFF3B82F6)},
+    {'key': 'bedding', 'label': 'Bedding', 'shortLabel': 'Bedding', 'color': Color(0xFF8B5CF6)},
+  ];
 
   // Pencapaian State
   Map<String, dynamic>? _pencapaianData;
@@ -267,9 +278,11 @@ class _ReportScreenState extends State<ReportScreen>
     if (empId.isEmpty) {
       if (mounted) {
         setState(() {
+          _rawSalesHistory = [];
           _salesHistory = [];
           _historyTotalAmount = 0;
           _historyTotalTransactions = 0;
+          _historyFilteredProductUnits = 0;
           _historyError = 'Silakan masukkan ID terlebih dahulu di form Penjualan.';
         });
       }
@@ -352,26 +365,19 @@ class _ReportScreenState extends State<ReportScreen>
             }).toList();
           }
 
-          int calculatedTotal = 0;
-          for (var item in filteredList) {
-            final itemMap = Map<String, dynamic>.from(item as Map);
-            calculatedTotal += (itemMap['total'] as num?)?.toInt() ?? 0;
-          }
-
-          _salesHistory = filteredList;
-          _historyTotalAmount = calculatedTotal;
-          _historyTotalTransactions = filteredList.length;
+          _rawSalesHistory = filteredList;
           _isAdminHistory = data['isAdmin'] == true || empId == '101';
           if (_selectedFilterPeriod == currentMonth &&
               (_selectedFilterStore == null || _selectedFilterStore!.isEmpty) &&
               (_selectedFilterDate == null || _selectedFilterDate!.isEmpty)) {
             _monthlyQtySummary = _calculateQtySummaryFromRecords(
-              filteredList,
+              _rawSalesHistory,
               empId: empId,
               currentMonth: currentMonth,
               isAdmin: _isAdminHistory,
             );
           }
+          _applyLocalProductFilter();
           if (data['stores'] != null) {
             _availableStores = List<String>.from(data['stores']);
           }
@@ -383,11 +389,134 @@ class _ReportScreenState extends State<ReportScreen>
     }
   }
 
+  bool _matchesProductFilter(Map<String, dynamic> itemMap, String? productKey) {
+    if (productKey == null || productKey == 'all') return true;
+    switch (productKey) {
+      case 'lawrence':
+        final os = (itemMap['lawQtyOs'] as num?)?.toInt() ?? 0;
+        final nh = (itemMap['lawQtyNh'] as num?)?.toInt() ?? 0;
+        final val = (itemMap['lawValue'] as num?)?.toInt() ?? 0;
+        final so = itemMap['lawNoSo']?.toString().trim() ?? '';
+        return os > 0 || nh > 0 || val > 0 || so.isNotEmpty;
+      case 'superbed':
+        final val = (itemMap['sbValue'] as num?)?.toInt() ?? 0;
+        final so = itemMap['sbNoSo']?.toString().trim() ?? '';
+        return val > 0 || so.isNotEmpty;
+      case 'sofa':
+        final qty = (itemMap['sofaQty'] as num?)?.toInt() ?? 0;
+        final val = (itemMap['sofaValue'] as num?)?.toInt() ?? 0;
+        final so = itemMap['sofaNoSo']?.toString().trim() ?? '';
+        return qty > 0 || val > 0 || so.isNotEmpty;
+      case 'bedding':
+        final val = (itemMap['bedValue'] as num?)?.toInt() ?? 0;
+        final so = itemMap['bedNoSo']?.toString().trim() ?? '';
+        return val > 0 || so.isNotEmpty;
+      default:
+        return true;
+    }
+  }
+
+  int _getProductFilteredValue(Map<String, dynamic> itemMap, String? productKey) {
+    if (productKey == null || productKey == 'all') {
+      return (itemMap['total'] as num?)?.toInt() ?? 0;
+    }
+    switch (productKey) {
+      case 'lawrence':
+        return (itemMap['lawValue'] as num?)?.toInt() ?? 0;
+      case 'superbed':
+        return (itemMap['sbValue'] as num?)?.toInt() ?? 0;
+      case 'sofa':
+        return (itemMap['sofaValue'] as num?)?.toInt() ?? 0;
+      case 'bedding':
+        return (itemMap['bedValue'] as num?)?.toInt() ?? 0;
+      default:
+        return (itemMap['total'] as num?)?.toInt() ?? 0;
+    }
+  }
+
+  int _getProductFilteredUnitCount(Map<String, dynamic> itemMap, String? productKey) {
+    switch (productKey) {
+      case 'lawrence':
+        final os = (itemMap['lawQtyOs'] as num?)?.toInt() ?? 0;
+        final nh = (itemMap['lawQtyNh'] as num?)?.toInt() ?? 0;
+        return os + nh;
+      case 'superbed':
+        return _countSoUnits(itemMap['sbNoSo']?.toString());
+      case 'sofa':
+        return (itemMap['sofaQty'] as num?)?.toInt() ?? 0;
+      case 'bedding':
+        return _countSoUnits(itemMap['bedNoSo']?.toString());
+      default:
+        return 0;
+    }
+  }
+
+  Map<String, dynamic> _getSelectedProductMeta() {
+    return _productFilterOptions.firstWhere(
+      (opt) => opt['key'] == _selectedFilterProduct,
+      orElse: () => _productFilterOptions.first,
+    );
+  }
+
+  String _getProductCardBreakdown(Map<String, dynamic> itemMap, String? productKey) {
+    switch (productKey) {
+      case 'lawrence':
+        final os = (itemMap['lawQtyOs'] as num?)?.toInt() ?? 0;
+        final nh = (itemMap['lawQtyNh'] as num?)?.toInt() ?? 0;
+        final so = itemMap['lawNoSo']?.toString().trim() ?? '';
+        final parts = <String>[
+          if (os > 0) 'OS: $os',
+          if (nh > 0) 'NH: $nh',
+          if (so.isNotEmpty) 'SO: $so',
+        ];
+        return parts.isEmpty ? 'Lawrence' : 'Lawrence (${parts.join(' • ')})';
+      case 'superbed':
+        final so = itemMap['sbNoSo']?.toString().trim() ?? '';
+        return so.isNotEmpty ? 'Superbed • SO: $so' : 'Superbed';
+      case 'sofa':
+        final qty = (itemMap['sofaQty'] as num?)?.toInt() ?? 0;
+        final so = itemMap['sofaNoSo']?.toString().trim() ?? '';
+        final parts = <String>[
+          if (qty > 0) 'Qty: $qty',
+          if (so.isNotEmpty) 'SO: $so',
+        ];
+        return parts.isEmpty ? 'Sofa' : 'Sofa (${parts.join(' • ')})';
+      case 'bedding':
+        final so = itemMap['bedNoSo']?.toString().trim() ?? '';
+        return so.isNotEmpty ? 'Bedding • SO: $so' : 'Bedding';
+      default:
+        return '';
+    }
+  }
+
+  void _applyLocalProductFilter() {
+    final filtered = _rawSalesHistory.where((item) {
+      final itemMap = Map<String, dynamic>.from(item as Map);
+      return _matchesProductFilter(itemMap, _selectedFilterProduct);
+    }).toList();
+
+    int calculatedTotal = 0;
+    int calculatedUnits = 0;
+    for (var item in filtered) {
+      final itemMap = Map<String, dynamic>.from(item as Map);
+      calculatedTotal += _getProductFilteredValue(itemMap, _selectedFilterProduct);
+      if (_selectedFilterProduct != null) {
+        calculatedUnits += _getProductFilteredUnitCount(itemMap, _selectedFilterProduct);
+      }
+    }
+
+    _salesHistory = filtered;
+    _historyTotalAmount = calculatedTotal;
+    _historyTotalTransactions = filtered.length;
+    _historyFilteredProductUnits = calculatedUnits;
+  }
+
   bool get _isFilterActive {
     final currentMonth = DateFormat('yyyy-MM').format(DateTime.now());
     return (_selectedFilterPeriod != null && _selectedFilterPeriod != currentMonth) ||
         _selectedFilterStore != null ||
-        _selectedFilterDate != null;
+        _selectedFilterDate != null ||
+        _selectedFilterProduct != null;
   }
 
   String _formatIndonesianPeriod(String period) {
@@ -3404,6 +3533,7 @@ class _ReportScreenState extends State<ReportScreen>
                             _selectedFilterPeriod = DateFormat('yyyy-MM').format(DateTime.now());
                             _selectedFilterStore = null;
                             _selectedFilterDate = null;
+                            _selectedFilterProduct = null;
                           });
                           _loadSalesHistory(showSpinner: true);
                         },
@@ -3607,48 +3737,148 @@ class _ReportScreenState extends State<ReportScreen>
                     ],
                   ),
                 ],
+                const SizedBox(height: 10),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.category_outlined,
+                      size: 15,
+                      color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Jenis Barang:',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: _productFilterOptions.map((opt) {
+                    final String? key = opt['key'] as String?;
+                    final String label = opt['label'] as String;
+                    final Color accent = opt['color'] as Color;
+                    final bool isSelected = _selectedFilterProduct == key;
+
+                    return InkWell(
+                      onTap: () {
+                        setState(() {
+                          _selectedFilterProduct = key;
+                          _applyLocalProductFilter();
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? accent.withValues(alpha: isDark ? 0.25 : 0.14)
+                              : (isDark ? const Color(0xFF0F172A) : Colors.grey.shade100),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isSelected
+                                ? accent
+                                : (isDark ? const Color(0xFF334155) : Colors.grey.shade300),
+                            width: isSelected ? 1.5 : 1,
+                          ),
+                        ),
+                        child: Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                            color: isSelected
+                                ? accent
+                                : (isDark ? Colors.grey.shade300 : Colors.grey.shade700),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
               ],
             ),
           ),
 
           // SUMMARY STATS (Total Transaksi & Total Nilai)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          Builder(
+            builder: (context) {
+              final selectedMeta = _getSelectedProductMeta();
+              final productShort = selectedMeta['shortLabel'] as String;
+              final productColor = selectedMeta['color'] as Color;
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      '$_historyTotalTransactions Transaksi',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade600,
-                        fontWeight: FontWeight.w600,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$_historyTotalTransactions Transaksi',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 6,
+                            children: [
+                              Text(
+                                _selectedFilterPeriod == 'all'
+                                    ? 'Seluruh Periode (All-Time)'
+                                    : 'Periode ${_formatIndonesianPeriod(_selectedFilterPeriod ?? "")}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ),
+                              if (_selectedFilterProduct != null)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: productColor.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    '$productShort: $_historyFilteredProductUnits Unit',
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: productColor,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
+                    const SizedBox(width: 8),
                     Text(
-                      _selectedFilterPeriod == 'all'
-                          ? 'Seluruh Periode (All-Time)'
-                          : 'Periode ${_formatIndonesianPeriod(_selectedFilterPeriod ?? "")}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey.shade500,
+                      'Total: Rp ${_formatCurrency(_historyTotalAmount)}',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        color: Color(0xFF10B981),
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ],
                 ),
-                Text(
-                  'Total: Rp ${_formatCurrency(_historyTotalAmount)}',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    color: Color(0xFF10B981),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
+              );
+            },
           ),
 
           // LIST DATA
@@ -3679,11 +3909,16 @@ class _ReportScreenState extends State<ReportScreen>
               final rawName = itemMap['nama']?.toString().toUpperCase() ?? 'SPG';
               final rawDate = itemMap['tanggal']?.toString() ?? itemMap['timestamp']?.toString() ?? '';
               final formattedDate = _formatIndonesianDate(rawDate);
-              final totalVal = (itemMap['total'] as num?)?.toInt() ?? 0;
-              final formattedAmount = _formatCurrency(totalVal);
+              final displayVal = _getProductFilteredValue(itemMap, _selectedFilterProduct);
+              final formattedAmount = _formatCurrency(displayVal);
               final tokoName = itemMap['toko']?.toString().trim() ?? '';
               final bool isEdited = itemMap['isEdited'] == true ||
                   (itemMap['editedLabel']?.toString().trim().isNotEmpty ?? false);
+              final selectedMeta = _getSelectedProductMeta();
+              final productColor = selectedMeta['color'] as Color;
+              final productBreakdown = _selectedFilterProduct != null
+                  ? _getProductCardBreakdown(itemMap, _selectedFilterProduct)
+                  : '';
 
               return Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
@@ -3785,7 +4020,7 @@ class _ReportScreenState extends State<ReportScreen>
                                 ),
                               ),
                               const SizedBox(height: 4),
-                              // TOTAL NILAI (Tanpa Rp / Berformat titik sesuai Data Penjualan.jpeg)
+                              // TOTAL NILAI (Sesuai filter jenis barang atau total keseluruhan)
                               Text(
                                 formattedAmount,
                                 style: TextStyle(
@@ -3794,6 +4029,25 @@ class _ReportScreenState extends State<ReportScreen>
                                   color: isDark ? Colors.grey.shade300 : Colors.grey.shade800,
                                 ),
                               ),
+                              if (productBreakdown.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: productColor.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: productColor.withValues(alpha: 0.3)),
+                                  ),
+                                  child: Text(
+                                    productBreakdown,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: productColor,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ),
