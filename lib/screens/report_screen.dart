@@ -2754,18 +2754,11 @@ class _ReportScreenState extends State<ReportScreen>
     final rawName = item['nama']?.toString().toUpperCase() ?? _nameController.text.trim();
     final rowIndex = item['rowIndex'];
 
-    DateTime selectedDate = DateTime.tryParse(rawDate) ?? DateTime.now();
-    final now = DateTime.now();
-    final isAdmin = _idController.text.trim() == '101' || _isAdminHistory;
-
-    // Batas tanggal: Untuk SPG maks 7 hari terakhir di bulan berjalan
-    final firstAllowedDate = isAdmin
-        ? DateTime(2024)
-        : DateTime(now.year, now.month, (now.day - 7 < 1) ? 1 : now.day - 7);
-    final lastAllowedDate = now;
+    final String fixedDate = rawDate.isNotEmpty
+        ? rawDate
+        : DateFormat('yyyy-MM-dd').format(DateTime.now());
 
     // Controller dan Inisialisasi data
-    final dateEditController = TextEditingController(text: DateFormat('yyyy-MM-dd').format(selectedDate));
     final lawQtyOsController = TextEditingController(
       text: (item['lawQtyOs'] ?? 0).toString() == '0' ? '' : (item['lawQtyOs'] ?? '').toString(),
     );
@@ -2878,53 +2871,42 @@ class _ReportScreenState extends State<ReportScreen>
                         ),
                         const Divider(height: 24),
 
-                        // FIELD TANGGAL TRANSAKSI
+                        // INFO TANGGAL TRANSAKSI (Read-Only / Tidak Dapat Diubah)
                         Container(
                           margin: const EdgeInsets.only(bottom: 16),
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade50,
+                            color: isDark ? const Color(0xFF1E293B).withValues(alpha: 0.7) : Colors.grey.shade100,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.calendar_today, size: 18, color: Color(0xFF3B82F6)),
+                              const Icon(Icons.calendar_today, size: 18, color: Colors.grey),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text('Tanggal Penjualan', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                                    const Text(
+                                      'Tanggal Penjualan (Terkunci)',
+                                      style: TextStyle(fontSize: 11, color: Colors.grey),
+                                    ),
                                     Text(
-                                      _formatIndonesianDate(dateEditController.text),
-                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                                      _formatIndonesianDate(fixedDate),
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
-                              OutlinedButton(
-                                onPressed: () async {
-                                  final picked = await showDatePicker(
-                                    context: context,
-                                    initialDate: selectedDate.isBefore(firstAllowedDate)
-                                        ? firstAllowedDate
-                                        : (selectedDate.isAfter(lastAllowedDate) ? lastAllowedDate : selectedDate),
-                                    firstDate: firstAllowedDate,
-                                    lastDate: lastAllowedDate,
-                                  );
-                                  if (picked != null) {
-                                    setModalState(() {
-                                      selectedDate = picked;
-                                      dateEditController.text = DateFormat('yyyy-MM-dd').format(picked);
-                                    });
-                                  }
-                                },
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                ),
-                                child: const Text('Ubah Tgl', style: TextStyle(fontSize: 12)),
+                              Icon(
+                                Icons.lock_outline,
+                                size: 18,
+                                color: Colors.grey.shade500,
                               ),
                             ],
                           ),
@@ -3103,7 +3085,7 @@ class _ReportScreenState extends State<ReportScreen>
                                           'id': empId,
                                           'employeeId': empId,
                                           'timestamp': timestamp,
-                                          'tanggal': dateEditController.text.trim(),
+                                          'tanggal': fixedDate,
                                           'lawQtyOs': int.tryParse(lawQtyOsController.text.trim()) ?? 0,
                                           'lawQtyNh': int.tryParse(lawQtyNhController.text.trim()) ?? 0,
                                           'lawValue': parseVal(lawValController),
