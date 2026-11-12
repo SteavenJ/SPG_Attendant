@@ -100,6 +100,14 @@ class _ReportScreenState extends State<ReportScreen>
   Map<String, dynamic>? _pencapaianData;
   bool _isLoadingPencapaian = false;
   String? _pencapaianError;
+  Map<String, int> _monthlyQtySummary = {
+    'lawOs': 0,
+    'lawNh': 0,
+    'superbed': 0,
+    'sofa': 0,
+    'bedding': 0,
+    'total': 0,
+  };
 
   @override
   bool get wantKeepAlive => true;
@@ -145,6 +153,61 @@ class _ReportScreenState extends State<ReportScreen>
     }
   }
 
+  /// Menghitung jumlah unit berdasarkan nomor SO (1 SO = 1 unit).
+  int _countSoUnits(String? rawNoSo) {
+    if (rawNoSo == null) return 0;
+    final trimmed = rawNoSo.trim();
+    if (trimmed.isEmpty || trimmed == '-' || trimmed == '0' || trimmed.toLowerCase() == 'null') {
+      return 0;
+    }
+    final parts = trimmed
+        .split(RegExp(r'[,;\n&]+'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty && s != '-' && s != '0' && s.toLowerCase() != 'null')
+        .toList();
+    return parts.length;
+  }
+
+  Map<String, int> _calculateQtySummaryFromRecords(
+    List<dynamic> rawList, {
+    required String empId,
+    required String currentMonth,
+    required bool isAdmin,
+  }) {
+    int lawOs = 0;
+    int lawNh = 0;
+    int superbed = 0;
+    int sofa = 0;
+    int bedding = 0;
+
+    for (var item in rawList) {
+      final itemMap = Map<String, dynamic>.from(item as Map);
+      final itemId = itemMap['id']?.toString().trim() ?? '';
+      final itemPeriode = itemMap['periode']?.toString().trim() ?? '';
+      final rawDate = itemMap['tanggal']?.toString() ?? itemMap['timestamp']?.toString() ?? '';
+      final bool inPeriod = itemPeriode.isNotEmpty
+          ? itemPeriode == currentMonth
+          : rawDate.startsWith(currentMonth);
+
+      if (inPeriod && (isAdmin || itemId == empId)) {
+        lawOs += (itemMap['lawQtyOs'] as num?)?.toInt() ?? 0;
+        lawNh += (itemMap['lawQtyNh'] as num?)?.toInt() ?? 0;
+        superbed += _countSoUnits(itemMap['sbNoSo']?.toString());
+        sofa += (itemMap['sofaQty'] as num?)?.toInt() ?? 0;
+        bedding += _countSoUnits(itemMap['bedNoSo']?.toString());
+      }
+    }
+
+    return {
+      'lawOs': lawOs,
+      'lawNh': lawNh,
+      'superbed': superbed,
+      'sofa': sofa,
+      'bedding': bedding,
+      'total': lawOs + lawNh + superbed + sofa + bedding,
+    };
+  }
+
   Future<void> _loadPencapaian({bool showSpinner = true}) async {
     if (showSpinner && mounted) {
       setState(() {
@@ -154,7 +217,17 @@ class _ReportScreenState extends State<ReportScreen>
     }
 
     final empId = _idController.text.trim();
-    final data = await widget.apiService.fetchPencapaian(empId);
+    final currentMonth = DateFormat('yyyy-MM').format(DateTime.now());
+    final bool isAdmin = empId == '101';
+
+    final pencapaianFuture = widget.apiService.fetchPencapaian(empId);
+    final historyFuture = empId.isNotEmpty
+        ? widget.apiService.fetchSalesHistory(employeeId: empId, periode: currentMonth)
+        : Future<Map<String, dynamic>?>.value(null);
+
+    final results = await Future.wait([pencapaianFuture, historyFuture]);
+    final data = results[0];
+    final historyData = results[1];
 
     if (mounted) {
       setState(() {
@@ -162,6 +235,26 @@ class _ReportScreenState extends State<ReportScreen>
         if (data != null && data['status'] == 'success') {
           _pencapaianData = data;
           _pencapaianError = null;
+
+          if (data['qtySummary'] != null && data['qtySummary'] is Map) {
+            final qMap = Map<String, dynamic>.from(data['qtySummary'] as Map);
+            _monthlyQtySummary = {
+              'lawOs': (qMap['lawOs'] as num?)?.toInt() ?? 0,
+              'lawNh': (qMap['lawNh'] as num?)?.toInt() ?? 0,
+              'superbed': (qMap['superbed'] as num?)?.toInt() ?? 0,
+              'sofa': (qMap['sofa'] as num?)?.toInt() ?? 0,
+              'bedding': (qMap['bedding'] as num?)?.toInt() ?? 0,
+              'total': (qMap['total'] as num?)?.toInt() ?? 0,
+            };
+          } else if (historyData != null && historyData['status'] == 'success') {
+            final rawList = historyData['data'] as List<dynamic>? ?? [];
+            _monthlyQtySummary = _calculateQtySummaryFromRecords(
+              rawList,
+              empId: empId,
+              currentMonth: currentMonth,
+              isAdmin: isAdmin,
+            );
+          }
         } else {
           _pencapaianError = data?['message'] ?? 'Belum dapat terhubung ke data pencapaian.';
         }
@@ -269,6 +362,16 @@ class _ReportScreenState extends State<ReportScreen>
           _historyTotalAmount = calculatedTotal;
           _historyTotalTransactions = filteredList.length;
           _isAdminHistory = data['isAdmin'] == true || empId == '101';
+          if (_selectedFilterPeriod == currentMonth &&
+              (_selectedFilterStore == null || _selectedFilterStore!.isEmpty) &&
+              (_selectedFilterDate == null || _selectedFilterDate!.isEmpty)) {
+            _monthlyQtySummary = _calculateQtySummaryFromRecords(
+              filteredList,
+              empId: empId,
+              currentMonth: currentMonth,
+              isAdmin: _isAdminHistory,
+            );
+          }
           if (data['stores'] != null) {
             _availableStores = List<String>.from(data['stores']);
           }
@@ -585,6 +688,315 @@ class _ReportScreenState extends State<ReportScreen>
   String _formatRp(dynamic amount) {
     final num val = (amount is num) ? amount : (num.tryParse(amount.toString()) ?? 0);
     return NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(val);
+  }
+
+  Widget _buildSingleBrandQtyBox({
+    required String title,
+    required int count,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.22),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.08),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+              border: Border(
+                bottom: BorderSide(color: Colors.white.withValues(alpha: 0.18), width: 1),
+              ),
+            ),
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 12.5,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+                child: Text(
+                  count > 0 ? '$count Unit' : '- Unit',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: count > 0 ? Colors.white : Colors.white60,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLawrenceSubColumn({
+    required String label,
+    required int count,
+  }) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              count > 0 ? '$count Unit' : '- Unit',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: count > 0 ? Colors.white : Colors.white60,
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLawrenceQtyBox({
+    required int osCount,
+    required int nhCount,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.22),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.08),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+              border: Border(
+                bottom: BorderSide(color: Colors.white.withValues(alpha: 0.18), width: 1),
+              ),
+            ),
+            child: const Text(
+              'Lawrence',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 12.5,
+              ),
+            ),
+          ),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildLawrenceSubColumn(label: 'Ortho Support', count: osCount),
+                Container(
+                  width: 1,
+                  color: Colors.white.withValues(alpha: 0.18),
+                ),
+                _buildLawrenceSubColumn(label: 'Natural Hybrid', count: nhCount),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMonthlyQtyCard({
+    required bool isDark,
+    required bool isAdmin,
+    required String periode,
+  }) {
+    final lawOs = _monthlyQtySummary['lawOs'] ?? 0;
+    final lawNh = _monthlyQtySummary['lawNh'] ?? 0;
+    final sbCount = _monthlyQtySummary['superbed'] ?? 0;
+    final sofaCount = _monthlyQtySummary['sofa'] ?? 0;
+    final bedCount = _monthlyQtySummary['bedding'] ?? 0;
+    final totalCount = _monthlyQtySummary['total'] ?? 0;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isDark
+              ? [const Color(0xFF1E3A8A), const Color(0xFF0F172A)]
+              : [const Color(0xFF2563EB), const Color(0xFF1D4ED8)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF2563EB).withValues(alpha: 0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.inventory_2_outlined, color: Colors.white70, size: 16),
+                  const SizedBox(width: 6),
+                  Text(
+                    isAdmin ? 'UNIT TERJUAL (SEMUA TOKO)' : 'UNIT TERJUAL PRIBADI',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _formatIndonesianPeriod(periode),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth >= 520) {
+                return IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: _buildLawrenceQtyBox(osCount: lawOs, nhCount: lawNh),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 1,
+                        child: _buildSingleBrandQtyBox(title: 'Superbed', count: sbCount),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 1,
+                        child: _buildSingleBrandQtyBox(title: 'Sofa', count: sofaCount),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 1,
+                        child: _buildSingleBrandQtyBox(title: 'Bedding', count: bedCount),
+                      ),
+                    ],
+                  ),
+                );
+              } else {
+                return Column(
+                  children: [
+                    _buildLawrenceQtyBox(osCount: lawOs, nhCount: lawNh),
+                    const SizedBox(height: 8),
+                    IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: _buildSingleBrandQtyBox(title: 'Superbed', count: sbCount),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _buildSingleBrandQtyBox(title: 'Sofa', count: sofaCount),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _buildSingleBrandQtyBox(title: 'Bedding', count: bedCount),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }
+            },
+          ),
+          const Divider(color: Colors.white24, height: 22),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Total Unit Terjual Bulan Ini:',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$totalCount Unit',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildPodiumPillar({
@@ -1031,6 +1443,14 @@ class _ReportScreenState extends State<ReportScreen>
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 16),
+
+              // KARTU QUANTITY PRODUK TERJUAL BULAN BERJALAN
+              _buildMonthlyQtyCard(
+                isDark: isDark,
+                isAdmin: isAdmin,
+                periode: periode,
               ),
               const SizedBox(height: 24),
             ] else if (!isAdmin) ...[
