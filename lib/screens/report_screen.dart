@@ -693,15 +693,26 @@ class _ReportScreenState extends State<ReportScreen>
   Widget _buildSingleBrandQtyBox({
     required String title,
     required int count,
+    required Color accentColor,
+    required bool isDark,
   }) {
+    final innerCardBg = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
+
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
+        color: innerCardBg,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.22),
-          width: 1,
+          color: accentColor.withValues(alpha: 0.35),
+          width: 1.5,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -710,19 +721,20 @@ class _ReportScreenState extends State<ReportScreen>
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+              color: accentColor.withValues(alpha: isDark ? 0.14 : 0.08),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12.5)),
               border: Border(
-                bottom: BorderSide(color: Colors.white.withValues(alpha: 0.18), width: 1),
+                bottom: BorderSide(color: accentColor.withValues(alpha: 0.25), width: 1),
               ),
             ),
             child: Text(
-              title,
+              title.toUpperCase(),
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 12.5,
+              style: TextStyle(
+                color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                fontWeight: FontWeight.w700,
+                fontSize: 11.5,
+                letterSpacing: 0.4,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -736,9 +748,9 @@ class _ReportScreenState extends State<ReportScreen>
                   count > 0 ? '$count Unit' : '- Unit',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: count > 0 ? Colors.white : Colors.white60,
+                    color: count > 0 ? accentColor : Colors.grey,
                     fontWeight: FontWeight.w800,
-                    fontSize: 15,
+                    fontSize: 17,
                   ),
                 ),
               ),
@@ -752,6 +764,8 @@ class _ReportScreenState extends State<ReportScreen>
   Widget _buildLawrenceSubColumn({
     required String label,
     required int count,
+    required Color accentColor,
+    required bool isDark,
   }) {
     return Expanded(
       child: Padding(
@@ -762,8 +776,8 @@ class _ReportScreenState extends State<ReportScreen>
             Text(
               label,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white70,
+              style: TextStyle(
+                color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
               ),
@@ -773,9 +787,9 @@ class _ReportScreenState extends State<ReportScreen>
               count > 0 ? '$count Unit' : '- Unit',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: count > 0 ? Colors.white : Colors.white60,
+                color: count > 0 ? accentColor : Colors.grey,
                 fontWeight: FontWeight.w800,
-                fontSize: 15,
+                fontSize: 17,
               ),
             ),
           ],
@@ -787,15 +801,26 @@ class _ReportScreenState extends State<ReportScreen>
   Widget _buildLawrenceQtyBox({
     required int osCount,
     required int nhCount,
+    required bool isDark,
   }) {
+    const accentColor = Color(0xFFF59E0B);
+    final innerCardBg = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
+
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
+        color: innerCardBg,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.22),
-          width: 1,
+          color: accentColor.withValues(alpha: 0.35),
+          width: 1.5,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -804,19 +829,20 @@ class _ReportScreenState extends State<ReportScreen>
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+              color: accentColor.withValues(alpha: isDark ? 0.14 : 0.08),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12.5)),
               border: Border(
-                bottom: BorderSide(color: Colors.white.withValues(alpha: 0.18), width: 1),
+                bottom: BorderSide(color: accentColor.withValues(alpha: 0.25), width: 1),
               ),
             ),
-            child: const Text(
-              'Lawrence',
+            child: Text(
+              'LAWRENCE',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 12.5,
+                color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                fontWeight: FontWeight.w700,
+                fontSize: 11.5,
+                letterSpacing: 0.4,
               ),
             ),
           ),
@@ -824,12 +850,22 @@ class _ReportScreenState extends State<ReportScreen>
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildLawrenceSubColumn(label: 'Ortho Support', count: osCount),
+                _buildLawrenceSubColumn(
+                  label: 'Ortho Support',
+                  count: osCount,
+                  accentColor: accentColor,
+                  isDark: isDark,
+                ),
                 Container(
                   width: 1,
-                  color: Colors.white.withValues(alpha: 0.18),
+                  color: accentColor.withValues(alpha: 0.2),
                 ),
-                _buildLawrenceSubColumn(label: 'Natural Hybrid', count: nhCount),
+                _buildLawrenceSubColumn(
+                  label: 'Natural Hybrid',
+                  count: nhCount,
+                  accentColor: accentColor,
+                  isDark: isDark,
+                ),
               ],
             ),
           ),
@@ -849,150 +885,235 @@ class _ReportScreenState extends State<ReportScreen>
     final sofaCount = _monthlyQtySummary['sofa'] ?? 0;
     final bedCount = _monthlyQtySummary['bedding'] ?? 0;
     final totalCount = _monthlyQtySummary['total'] ?? 0;
+    final cardColor = Theme.of(context).cardColor;
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: isDark
-              ? [const Color(0xFF1E3A8A), const Color(0xFF0F172A)]
-              : [const Color(0xFF2563EB), const Color(0xFF1D4ED8)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: cardColor,
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFF3B82F6).withValues(alpha: 0.35),
+          width: 1.5,
+        ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF2563EB).withValues(alpha: 0.3),
+            color: const Color(0xFF2563EB).withValues(alpha: 0.08),
             blurRadius: 12,
-            offset: const Offset(0, 6),
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.inventory_2_outlined, color: Colors.white70, size: 16),
-                  const SizedBox(width: 6),
-                  Text(
-                    isAdmin ? 'UNIT TERJUAL (SEMUA TOKO)' : 'UNIT TERJUAL PRIBADI',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
+          // Header bergaya Kartu Atas (Blue Gradient Header Strip)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isDark
+                    ? [const Color(0xFF1E3A8A), const Color(0xFF172554)]
+                    : [const Color(0xFF2563EB), const Color(0xFF1D4ED8)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  _formatIndonesianPeriod(periode),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              if (constraints.maxWidth >= 520) {
-                return IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: _buildLawrenceQtyBox(osCount: lawOs, nhCount: lawNh),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        flex: 1,
-                        child: _buildSingleBrandQtyBox(title: 'Superbed', count: sbCount),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        flex: 1,
-                        child: _buildSingleBrandQtyBox(title: 'Sofa', count: sofaCount),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        flex: 1,
-                        child: _buildSingleBrandQtyBox(title: 'Bedding', count: bedCount),
-                      ),
-                    ],
-                  ),
-                );
-              } else {
-                return Column(
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
                   children: [
-                    _buildLawrenceQtyBox(osCount: lawOs, nhCount: lawNh),
-                    const SizedBox(height: 8),
-                    IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(
-                            child: _buildSingleBrandQtyBox(title: 'Superbed', count: sbCount),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _buildSingleBrandQtyBox(title: 'Sofa', count: sofaCount),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _buildSingleBrandQtyBox(title: 'Bedding', count: bedCount),
-                          ),
-                        ],
+                    const Icon(Icons.inventory_2_outlined, color: Colors.white, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      isAdmin ? 'UNIT TERJUAL (SEMUA TOKO)' : 'UNIT TERJUAL BULAN INI',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
                       ),
                     ),
                   ],
-                );
-              }
-            },
-          ),
-          const Divider(color: Colors.white24, height: 22),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Total Unit Terjual Bulan Ini:',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w600,
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  '$totalCount Unit',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    _formatIndonesianPeriod(periode),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
+          ),
+
+          // Body bergaya Kartu Tengah (4 Kartu dengan Colored Borders & Bold Colored Metrics)
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (constraints.maxWidth >= 520) {
+                      return IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              flex: 2,
+                              child: _buildLawrenceQtyBox(
+                                osCount: lawOs,
+                                nhCount: lawNh,
+                                isDark: isDark,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              flex: 1,
+                              child: _buildSingleBrandQtyBox(
+                                title: 'Superbed',
+                                count: sbCount,
+                                accentColor: const Color(0xFFEA580C),
+                                isDark: isDark,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              flex: 1,
+                              child: _buildSingleBrandQtyBox(
+                                title: 'Sofa',
+                                count: sofaCount,
+                                accentColor: const Color(0xFF3B82F6),
+                                isDark: isDark,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              flex: 1,
+                              child: _buildSingleBrandQtyBox(
+                                title: 'Bedding',
+                                count: bedCount,
+                                accentColor: const Color(0xFF8B5CF6),
+                                isDark: isDark,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    } else {
+                      return Column(
+                        children: [
+                          _buildLawrenceQtyBox(
+                            osCount: lawOs,
+                            nhCount: lawNh,
+                            isDark: isDark,
+                          ),
+                          const SizedBox(height: 10),
+                          IntrinsicHeight(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Expanded(
+                                  child: _buildSingleBrandQtyBox(
+                                    title: 'Superbed',
+                                    count: sbCount,
+                                    accentColor: const Color(0xFFEA580C),
+                                    isDark: isDark,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _buildSingleBrandQtyBox(
+                                    title: 'Sofa',
+                                    count: sofaCount,
+                                    accentColor: const Color(0xFF3B82F6),
+                                    isDark: isDark,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _buildSingleBrandQtyBox(
+                                    title: 'Bedding',
+                                    count: bedCount,
+                                    accentColor: const Color(0xFF8B5CF6),
+                                    isDark: isDark,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                  },
+                ),
+
+                const SizedBox(height: 12),
+
+                // Footer Ringkasan Total Unit
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2563EB).withValues(alpha: isDark ? 0.14 : 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFF3B82F6).withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.summarize_outlined,
+                            size: 17,
+                            color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Total Unit Terjual Bulan Ini:',
+                            style: TextStyle(
+                              color: isDark ? Colors.white : const Color(0xFF1E293B),
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.4),
+                          ),
+                        ),
+                        child: Text(
+                          '$totalCount Unit',
+                          style: const TextStyle(
+                            color: Color(0xFF10B981),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
