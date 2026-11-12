@@ -112,6 +112,8 @@ class _ReportScreenState extends State<ReportScreen>
   bool _isLoadingPencapaian = false;
   String? _pencapaianError;
   int _prevRealizationAmount = 0;
+  List<dynamic> _currentMonthSalesList = [];
+  bool _hasCurrentMonthHistory = false;
   Map<String, int> _monthlyQtySummary = {
     'lawOs': 0,
     'lawNh': 0,
@@ -132,6 +134,14 @@ class _ReportScreenState extends State<ReportScreen>
     'amount': 0,
     'txCount': 0,
   };
+
+  static const List<Map<String, dynamic>> _incentiveTiers = [
+    {'minPct': 0.0, 'rate': 0.0, 'rangeLabel': '< 50%'},
+    {'minPct': 50.0, 'rate': 0.5, 'rangeLabel': '≥ 50%'},
+    {'minPct': 85.0, 'rate': 0.8, 'rangeLabel': '≥ 85%'},
+    {'minPct': 100.0, 'rate': 1.0, 'rangeLabel': '≥ 100%'},
+    {'minPct': 120.0, 'rate': 1.2, 'rangeLabel': '≥ 120%'},
+  ];
 
   @override
   bool get wantKeepAlive => true;
@@ -192,6 +202,34 @@ class _ReportScreenState extends State<ReportScreen>
     return parts.length;
   }
 
+  bool _isItemInMonth(Map<String, dynamic> itemMap, String targetMonth) {
+    final itemPeriode = itemMap['periode']?.toString().trim() ?? '';
+    final rawDate = itemMap['tanggal']?.toString() ?? itemMap['timestamp']?.toString() ?? '';
+    return itemPeriode.isNotEmpty
+        ? itemPeriode == targetMonth
+        : rawDate.startsWith(targetMonth);
+  }
+
+  int _extractTxTotal(Map<String, dynamic> itemMap) {
+    return (itemMap['total'] as num?)?.toInt() ??
+        (((itemMap['lawValue'] as num?)?.toInt() ?? 0) +
+            ((itemMap['sbValue'] as num?)?.toInt() ?? 0) +
+            ((itemMap['sofaValue'] as num?)?.toInt() ?? 0) +
+            ((itemMap['bedValue'] as num?)?.toInt() ?? 0));
+  }
+
+  double _getIncentiveRate(double storeAchievementPct) {
+    if (storeAchievementPct >= 120.0) return 1.2;
+    if (storeAchievementPct >= 100.0) return 1.0;
+    if (storeAchievementPct >= 85.0) return 0.8;
+    if (storeAchievementPct >= 50.0) return 0.5;
+    return 0.0;
+  }
+
+  String _formatIncentiveRate(double rate) {
+    return rate == rate.roundToDouble() ? '${rate.toInt()}%' : '$rate%';
+  }
+
   /// Menghitung seluruh metrik performa (unit per produk, total omset, jumlah transaksi) untuk bulan tertentu.
   Map<String, int> _calculatePeriodMetrics(
     List<dynamic> rawList, {
@@ -210,26 +248,15 @@ class _ReportScreenState extends State<ReportScreen>
     for (var item in rawList) {
       final itemMap = Map<String, dynamic>.from(item as Map);
       final itemId = itemMap['id']?.toString().trim() ?? '';
-      final itemPeriode = itemMap['periode']?.toString().trim() ?? '';
-      final rawDate = itemMap['tanggal']?.toString() ?? itemMap['timestamp']?.toString() ?? '';
-      final bool inPeriod = itemPeriode.isNotEmpty
-          ? itemPeriode == targetMonth
-          : rawDate.startsWith(targetMonth);
 
-      if (inPeriod && (isAdmin || itemId == empId)) {
+      if (_isItemInMonth(itemMap, targetMonth) && (isAdmin || itemId == empId)) {
         txCount++;
         lawOs += (itemMap['lawQtyOs'] as num?)?.toInt() ?? 0;
         lawNh += (itemMap['lawQtyNh'] as num?)?.toInt() ?? 0;
         superbed += _countSoUnits(itemMap['sbNoSo']?.toString());
         sofa += (itemMap['sofaQty'] as num?)?.toInt() ?? 0;
         bedding += _countSoUnits(itemMap['bedNoSo']?.toString());
-
-        final txTotal = (itemMap['total'] as num?)?.toInt() ??
-            (((itemMap['lawValue'] as num?)?.toInt() ?? 0) +
-                ((itemMap['sbValue'] as num?)?.toInt() ?? 0) +
-                ((itemMap['sofaValue'] as num?)?.toInt() ?? 0) +
-                ((itemMap['bedValue'] as num?)?.toInt() ?? 0));
-        totalAmount += txTotal;
+        totalAmount += _extractTxTotal(itemMap);
       }
     }
 
@@ -286,9 +313,12 @@ class _ReportScreenState extends State<ReportScreen>
           _pencapaianData = data;
           _pencapaianError = null;
 
-          final currRawList = (historyData != null && historyData['status'] == 'success')
+          final bool hasCurrHistory = historyData != null && historyData['status'] == 'success';
+          final currRawList = hasCurrHistory
               ? (historyData['data'] as List<dynamic>? ?? [])
               : <dynamic>[];
+          _hasCurrentMonthHistory = hasCurrHistory;
+          _currentMonthSalesList = currRawList;
           final currFromHistory = _calculatePeriodMetrics(
             currRawList,
             empId: empId,
@@ -445,6 +475,8 @@ class _ReportScreenState extends State<ReportScreen>
           if ((_selectedFilterStore == null || _selectedFilterStore!.isEmpty) &&
               (_selectedFilterDate == null || _selectedFilterDate!.isEmpty)) {
             if (_selectedFilterPeriod == currentMonth) {
+              _hasCurrentMonthHistory = true;
+              _currentMonthSalesList = _rawSalesHistory;
               _monthlyQtySummary = _calculatePeriodMetrics(
                 _rawSalesHistory,
                 empId: empId,
@@ -1505,6 +1537,803 @@ class _ReportScreenState extends State<ReportScreen>
     );
   }
 
+  List<Map<String, dynamic>> _computeAllSpgIncentives({
+    required List<dynamic> podiumList,
+    required List<dynamic> leaderboardList,
+    required String periode,
+  }) {
+    final Map<String, Map<String, dynamic>> storeMap = {};
+    for (final rawStore in [...podiumList, ...leaderboardList]) {
+      if (rawStore is! Map) continue;
+      final s = Map<String, dynamic>.from(rawStore);
+      final toko = s['toko']?.toString().trim() ?? '';
+      if (toko.isEmpty) continue;
+      final target = (s['target'] as num?)?.toInt() ?? 0;
+      final actual = (s['actual'] as num?)?.toInt() ?? 0;
+      final pct = target > 0
+          ? (actual / target) * 100.0
+          : ((s['percentage'] ?? s['persentase'] ?? 0) as num).toDouble();
+      storeMap[toko.toUpperCase()] = {
+        'toko': toko,
+        'target': target,
+        'actual': actual,
+        'pct': pct,
+      };
+    }
+
+    final Map<String, Map<String, dynamic>> spgAcc = {};
+    for (final rawItem in _currentMonthSalesList) {
+      if (rawItem is! Map) continue;
+      final itemMap = Map<String, dynamic>.from(rawItem);
+      if (!_isItemInMonth(itemMap, periode)) continue;
+
+      final empId = itemMap['id']?.toString().trim() ?? '';
+      if (empId.isEmpty || empId == '101') continue;
+
+      final rawName = itemMap['nama']?.toString().trim() ?? '';
+      final name = rawName.isNotEmpty ? rawName : (_promotorNames[empId] ?? 'SPG $empId');
+      final tokoRaw = itemMap['toko']?.toString().trim() ?? '';
+      final tokoKey = tokoRaw.isEmpty ? '-' : tokoRaw.toUpperCase();
+      final txTotal = _extractTxTotal(itemMap);
+
+      final entry = spgAcc.putIfAbsent(empId, () => {
+        'empId': empId,
+        'name': name,
+        'txCount': 0,
+        'salesByStore': <String, int>{},
+        'storeDisplay': <String, String>{},
+      });
+      entry['txCount'] = (entry['txCount'] as int) + 1;
+      final salesByStore = entry['salesByStore'] as Map<String, int>;
+      final storeDisplay = entry['storeDisplay'] as Map<String, String>;
+      salesByStore[tokoKey] = (salesByStore[tokoKey] ?? 0) + txTotal;
+      if (tokoRaw.isNotEmpty) {
+        storeDisplay.putIfAbsent(tokoKey, () => tokoRaw);
+      }
+    }
+
+    final List<Map<String, dynamic>> rows = [];
+    for (final acc in spgAcc.values) {
+      final salesByStore = acc['salesByStore'] as Map<String, int>;
+      final storeDisplay = acc['storeDisplay'] as Map<String, String>;
+
+      int totalSales = 0;
+      int totalIncentiveRp = 0;
+      String primaryStoreKey = '-';
+      int maxStoreSales = -1;
+
+      for (final storeEntry in salesByStore.entries) {
+        totalSales += storeEntry.value;
+        if (storeEntry.value > maxStoreSales) {
+          maxStoreSales = storeEntry.value;
+          primaryStoreKey = storeEntry.key;
+        }
+        final storeInfo = storeMap[storeEntry.key];
+        final double pct = (storeInfo?['pct'] as double?) ?? 0.0;
+        final double rate = _getIncentiveRate(pct);
+        totalIncentiveRp += (storeEntry.value * (rate / 100.0)).round();
+      }
+
+      final primaryStoreInfo = storeMap[primaryStoreKey];
+      final double primaryPct = (primaryStoreInfo?['pct'] as double?) ?? 0.0;
+      final double primaryRate = _getIncentiveRate(primaryPct);
+      final String displayToko = primaryStoreInfo?['toko']?.toString() ??
+          storeDisplay[primaryStoreKey] ??
+          primaryStoreKey;
+
+      rows.add({
+        'empId': acc['empId'],
+        'name': acc['name'],
+        'toko': salesByStore.length > 1 ? '$displayToko (+${salesByStore.length - 1})' : displayToko,
+        'txCount': acc['txCount'],
+        'salesAmount': totalSales,
+        'storePct': primaryPct,
+        'rate': primaryRate,
+        'incentiveRp': totalIncentiveRp,
+      });
+    }
+
+    rows.sort((a, b) {
+      final incCmp = (b['incentiveRp'] as int).compareTo(a['incentiveRp'] as int);
+      if (incCmp != 0) return incCmp;
+      final salesCmp = (b['salesAmount'] as int).compareTo(a['salesAmount'] as int);
+      if (salesCmp != 0) return salesCmp;
+      return (a['name'] as String).compareTo(b['name'] as String);
+    });
+
+    return rows;
+  }
+
+  Widget _buildIncentiveTierLegend({
+    double? activeRate,
+    required bool isDark,
+  }) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: _incentiveTiers.map((tier) {
+        final double tierRate = (tier['rate'] as num).toDouble();
+        final String rangeLabel = tier['rangeLabel'] as String;
+        final bool isActive = activeRate != null && (tierRate - activeRate).abs() < 0.001;
+        final bool isPaid = tierRate > 0;
+        final Color activeColor = isPaid ? const Color(0xFF10B981) : const Color(0xFF64748B);
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: isActive
+                ? activeColor.withValues(alpha: isDark ? 0.24 : 0.14)
+                : (isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC)),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isActive
+                  ? activeColor
+                  : (isDark ? Colors.white12 : Colors.grey.shade300),
+              width: isActive ? 1.4 : 1.0,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isActive) ...[
+                Icon(Icons.check_circle_rounded, size: 12, color: activeColor),
+                const SizedBox(width: 4),
+              ],
+              Text(
+                '$rangeLabel : ${_formatIncentiveRate(tierRate)}',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
+                  color: isActive
+                      ? activeColor
+                      : (isDark ? Colors.grey.shade300 : Colors.grey.shade700),
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildIncentiveCard({
+    required bool isDark,
+    required bool isAdmin,
+    required String periode,
+    required Map<String, dynamic> personal,
+    required List<dynamic> podiumList,
+    required List<dynamic> leaderboardList,
+  }) {
+    final int storeTarget = (personal['target'] as num?)?.toInt() ?? 0;
+    final int storeActual = (personal['actual'] as num?)?.toInt() ?? 0;
+    final double storePct = storeTarget > 0
+        ? (storeActual / storeTarget) * 100.0
+        : ((personal['percentage'] ?? personal['persentase'] ?? 0) as num).toDouble();
+    final double personalRate = _getIncentiveRate(storePct);
+    final bool hasPositiveTier = isAdmin || personalRate > 0;
+    final Color borderAccent = hasPositiveTier ? const Color(0xFF10B981) : const Color(0xFF64748B);
+    final List<Color> headerColors = hasPositiveTier
+        ? (isDark
+            ? [const Color(0xFF065F46), const Color(0xFF064E3B)]
+            : [const Color(0xFF10B981), const Color(0xFF059669)])
+        : (isDark
+            ? [const Color(0xFF334155), const Color(0xFF1E293B)]
+            : [const Color(0xFF475569), const Color(0xFF334155)]);
+    final currShort = _formatShortMonthPeriod(periode);
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: borderAccent.withValues(alpha: 0.4),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: borderAccent.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: headerColors,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      const Icon(Icons.payments_outlined, color: Colors.white, size: 18),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          isAdmin ? 'REKAP INSENTIF SPG' : 'ESTIMASI INSENTIF BULAN INI',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    isAdmin ? currShort : 'Rate ${_formatIncentiveRate(personalRate)}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: isAdmin
+                ? _buildAdminIncentiveBody(
+                    isDark: isDark,
+                    periode: periode,
+                    podiumList: podiumList,
+                    leaderboardList: leaderboardList,
+                  )
+                : _buildPersonalIncentiveBody(
+                    isDark: isDark,
+                    storeTarget: storeTarget,
+                    storeActual: storeActual,
+                    storePct: storePct,
+                    rate: personalRate,
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPersonalIncentiveBody({
+    required bool isDark,
+    required int storeTarget,
+    required int storeActual,
+    required double storePct,
+    required double rate,
+  }) {
+    final int spgSalesAmount = _monthlyQtySummary['amount'] ?? 0;
+    final int spgTxCount = _monthlyQtySummary['txCount'] ?? 0;
+    final int incentiveRp = (spgSalesAmount * (rate / 100.0)).round();
+    final Color accentColor = rate > 0 ? const Color(0xFF10B981) : const Color(0xFF64748B);
+    final Color innerBg = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
+
+    // Cari target tier berikutnya sebagai panduan progres
+    double? nextThresholdPct;
+    double? nextThresholdRate;
+    if (storePct < 50.0) {
+      nextThresholdPct = 50.0;
+      nextThresholdRate = 0.5;
+    } else if (storePct < 85.0) {
+      nextThresholdPct = 85.0;
+      nextThresholdRate = 0.8;
+    } else if (storePct < 100.0) {
+      nextThresholdPct = 100.0;
+      nextThresholdRate = 1.0;
+    } else if (storePct < 120.0) {
+      nextThresholdPct = 120.0;
+      nextThresholdRate = 1.2;
+    }
+
+    int neededStoreRp = 0;
+    if (nextThresholdPct != null && storeTarget > 0) {
+      final int targetAtNext = (storeTarget * (nextThresholdPct / 100.0)).ceil();
+      neededStoreRp = (targetAtNext - storeActual).clamp(0, targetAtNext);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: accentColor.withValues(alpha: isDark ? 0.14 : 0.08),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: accentColor.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Estimasi Insentif Diterima',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _hasCurrentMonthHistory ? _formatRp(incentiveRp) : 'Rp -',
+                      style: TextStyle(
+                        fontSize: 23,
+                        fontWeight: FontWeight.w900,
+                        color: rate > 0
+                            ? const Color(0xFF10B981)
+                            : (isDark ? Colors.white : const Color(0xFF1E293B)),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _hasCurrentMonthHistory
+                          ? '${_formatIncentiveRate(rate)} × ${_formatRp(spgSalesAmount)}'
+                          : 'Memuat data omset penjualan Anda...',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: accentColor.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: accentColor.withValues(alpha: 0.35)),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'TIER',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w700,
+                        color: accentColor,
+                      ),
+                    ),
+                    Text(
+                      _formatIncentiveRate(rate),
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        color: accentColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: innerBg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: isDark ? Colors.white12 : Colors.grey.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Pencapaian Toko',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${storePct.toStringAsFixed(1)}%',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: rate > 0
+                            ? const Color(0xFF10B981)
+                            : (isDark ? Colors.white : const Color(0xFF1E293B)),
+                      ),
+                    ),
+                    Text(
+                      'Menentukan rate %',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isDark ? Colors.grey.shade500 : Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: innerBg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: isDark ? Colors.white12 : Colors.grey.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Penjualan Anda',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      _hasCurrentMonthHistory ? _formatRp(spgSalesAmount) : '-',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: isDark ? Colors.white : const Color(0xFF1E293B),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      '$spgTxCount transaksi bulan ini',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isDark ? Colors.grey.shade500 : Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: innerBg,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    nextThresholdPct == null
+                        ? Icons.workspace_premium_rounded
+                        : Icons.flag_outlined,
+                    size: 15,
+                    color: nextThresholdPct == null
+                        ? const Color(0xFFF59E0B)
+                        : const Color(0xFF3B82F6),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      nextThresholdPct == null
+                          ? 'Target toko sudah melampaui 120% (Tier Tertinggi 1.2%).'
+                          : 'Butuh ${(nextThresholdPct - storePct).toStringAsFixed(1)}% lagi (${_formatRp(neededStoreRp)} omset toko) ke Tier ${_formatIncentiveRate(nextThresholdRate!)} (${nextThresholdPct.toInt()}%)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (nextThresholdPct != null) ...[
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: (storePct / nextThresholdPct).clamp(0.0, 1.0),
+                    minHeight: 5,
+                    backgroundColor: isDark ? Colors.white12 : Colors.grey.shade200,
+                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF3B82F6)),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'Skema Tier Insentif',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        _buildIncentiveTierLegend(activeRate: rate, isDark: isDark),
+      ],
+    );
+  }
+
+  Widget _buildAdminIncentiveBody({
+    required bool isDark,
+    required String periode,
+    required List<dynamic> podiumList,
+    required List<dynamic> leaderboardList,
+  }) {
+    final rows = _computeAllSpgIncentives(
+      podiumList: podiumList,
+      leaderboardList: leaderboardList,
+      periode: periode,
+    );
+    final int totalIncentiveAll = rows.fold(0, (sum, r) => sum + (r['incentiveRp'] as int));
+    final int totalSalesAll = rows.fold(0, (sum, r) => sum + (r['salesAmount'] as int));
+    final int qualifiedCount = rows.where((r) => (r['rate'] as double) > 0).length;
+    final Color innerBg = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF10B981).withValues(alpha: isDark ? 0.14 : 0.08),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+          ),
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Total Estimasi Insentif (${rows.length} SPG)',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    _formatRp(totalIncentiveAll),
+                    style: const TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF10B981),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Total Omset SPG: ${_formatRp(totalSalesAll)}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.35)),
+                ),
+                child: Text(
+                  '$qualifiedCount / ${rows.length} Lolos Tier ≥50%',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF10B981),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        _buildIncentiveTierLegend(isDark: isDark),
+        const SizedBox(height: 12),
+        if (!_hasCurrentMonthHistory)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              'Data transaksi bulan ini belum termuat. Tarik halaman ke bawah untuk muat ulang.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            ),
+          )
+        else if (rows.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: innerBg,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              'Belum ada transaksi penjualan SPG tercatat pada ${_formatShortMonthPeriod(periode)}.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            ),
+          )
+        else
+          ...List.generate(rows.length, (index) {
+            final row = rows[index];
+            final double rate = row['rate'] as double;
+            final double storePct = row['storePct'] as double;
+            final int incentiveRp = row['incentiveRp'] as int;
+            final int salesAmount = row['salesAmount'] as int;
+            final int txCount = row['txCount'] as int;
+            final bool isPaid = rate > 0;
+            final Color rowAccent = isPaid ? const Color(0xFF10B981) : Colors.grey;
+
+            return Container(
+              margin: EdgeInsets.only(bottom: index == rows.length - 1 ? 0 : 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: innerBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isPaid
+                      ? const Color(0xFF10B981).withValues(alpha: 0.35)
+                      : (isDark ? Colors.white12 : Colors.grey.shade200),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 26,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: rowAccent.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: Text(
+                            '${index + 1}',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              color: rowAccent,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${row['name']} (ID ${row['empId']})',
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : const Color(0xFF1E293B),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${row['toko']} • $txCount trx',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: rowAccent.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: rowAccent.withValues(alpha: 0.35)),
+                        ),
+                        child: Text(
+                          '${storePct.toStringAsFixed(1)}% → ${_formatIncentiveRate(rate)}',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: rowAccent,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Omset SPG',
+                              style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                            ),
+                            Text(
+                              _formatRp(salesAmount),
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.grey.shade200 : const Color(0xFF334155),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              'Estimasi Insentif',
+                              style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                            ),
+                            Text(
+                              _formatRp(incentiveRp),
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
+                                color: isPaid ? const Color(0xFF10B981) : Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
   Widget _buildPodiumPillar({
     required int rank,
     required String storeName,
@@ -1971,6 +2800,17 @@ class _ReportScreenState extends State<ReportScreen>
                 isDark: isDark,
                 isAdmin: isAdmin,
                 periode: periode,
+              ),
+              const SizedBox(height: 16),
+
+              // KARTU PERHITUNGAN INSENTIF SPG
+              _buildIncentiveCard(
+                isDark: isDark,
+                isAdmin: isAdmin,
+                periode: periode,
+                personal: personal,
+                podiumList: podiumList,
+                leaderboardList: leaderboardList,
               ),
               const SizedBox(height: 24),
             ] else if (!isAdmin) ...[
