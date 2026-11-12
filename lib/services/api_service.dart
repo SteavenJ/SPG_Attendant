@@ -176,12 +176,13 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>?> fetchPencapaian(String employeeId) async {
+  Future<Map<String, dynamic>?> fetchPencapaian(String employeeId, {String? periode}) async {
     try {
       // First try POST with action 'pencapaian' (immune to CORS/redirect issues in Flutter Web)
       final body = jsonEncode({
         'action': 'pencapaian',
         'employeeId': employeeId,
+        if (periode != null && periode.isNotEmpty) 'periode': periode,
       });
 
       final response = await client.post(
@@ -199,10 +200,13 @@ class ApiService {
     } catch (_) {
       // Fallback to GET if POST fails
       try {
-        final uri = Uri.parse(salesScriptUrls[0]).replace(queryParameters: {
+        final queryParams = <String, String>{
           'action': 'pencapaian',
           'employeeId': employeeId,
-        });
+        };
+        if (periode != null && periode.isNotEmpty) queryParams['periode'] = periode;
+
+        final uri = Uri.parse(salesScriptUrls[0]).replace(queryParameters: queryParams);
         final response = await client.get(uri);
         if (response.statusCode == 200 || response.statusCode == 302) {
           final Map<String, dynamic> data = jsonDecode(response.body);

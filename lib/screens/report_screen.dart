@@ -111,6 +111,7 @@ class _ReportScreenState extends State<ReportScreen>
   Map<String, dynamic>? _pencapaianData;
   bool _isLoadingPencapaian = false;
   String? _pencapaianError;
+  int _prevRealizationAmount = 0;
   Map<String, int> _monthlyQtySummary = {
     'lawOs': 0,
     'lawNh': 0,
@@ -259,6 +260,7 @@ class _ReportScreenState extends State<ReportScreen>
     final bool isAdmin = empId == '101';
 
     final pencapaianFuture = widget.apiService.fetchPencapaian(empId);
+    final prevPencapaianFuture = widget.apiService.fetchPencapaian(empId, periode: prevMonth);
     final historyFuture = empId.isNotEmpty
         ? widget.apiService.fetchSalesHistory(employeeId: empId, periode: currentMonth)
         : Future<Map<String, dynamic>?>.value(null);
@@ -266,10 +268,16 @@ class _ReportScreenState extends State<ReportScreen>
         ? widget.apiService.fetchSalesHistory(employeeId: empId, periode: prevMonth)
         : Future<Map<String, dynamic>?>.value(null);
 
-    final results = await Future.wait([pencapaianFuture, historyFuture, prevHistoryFuture]);
+    final results = await Future.wait([
+      pencapaianFuture,
+      prevPencapaianFuture,
+      historyFuture,
+      prevHistoryFuture,
+    ]);
     final data = results[0];
-    final historyData = results[1];
-    final prevHistoryData = results[2];
+    final prevPencapaianData = results[1];
+    final historyData = results[2];
+    final prevHistoryData = results[3];
 
     if (mounted) {
       setState(() {
@@ -320,6 +328,17 @@ class _ReportScreenState extends State<ReportScreen>
             targetMonth: prevMonth,
             isAdmin: isAdmin,
           );
+
+          if (prevPencapaianData != null &&
+              prevPencapaianData['status'] == 'success' &&
+              prevPencapaianData['periode']?.toString() == prevMonth) {
+            final prevPersonal = prevPencapaianData['personal'] as Map?;
+            _prevRealizationAmount = (prevPersonal?['actual'] as num?)?.toInt() ??
+                (prevPencapaianData['totalActual'] as num?)?.toInt() ??
+                (_prevMonthMetrics['amount'] ?? 0);
+          } else {
+            _prevRealizationAmount = _prevMonthMetrics['amount'] ?? 0;
+          }
         } else {
           _pencapaianError = data?['message'] ?? 'Belum dapat terhubung ke data pencapaian.';
         }
@@ -883,9 +902,108 @@ class _ReportScreenState extends State<ReportScreen>
     return NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(val);
   }
 
+  String _formatShortMonthPeriod(String period) {
+    try {
+      final parts = period.split('-');
+      if (parts.length == 2) {
+        final y = int.parse(parts[0]);
+        final m = int.parse(parts[1]);
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+        if (m >= 1 && m <= 12) return '${months[m - 1]} $y';
+      }
+    } catch (_) {}
+    return period;
+  }
+
+  /// Badge tren kompak (naik hijau / turun merah) untuk ditempel di samping nominal & qty.
+  Widget _buildInlineTrendBadge({
+    required int current,
+    required int previous,
+    bool showPercentage = false,
+    String? compareLabel,
+    bool onHeroCard = false,
+  }) {
+    if (current == 0 && previous == 0) {
+      return const SizedBox.shrink();
+    }
+
+    final int diff = current - previous;
+    final bool isUp = diff > 0;
+    final bool isDown = diff < 0;
+
+    Color fgColor;
+    Color bgColor;
+    Color borderColor;
+    IconData icon;
+
+    if (onHeroCard) {
+      fgColor = isUp
+          ? const Color(0xFF6EE7B7)
+          : (isDown ? const Color(0xFFFCA5A5) : Colors.white70);
+      bgColor = isUp
+          ? const Color(0xFF065F46).withValues(alpha: 0.65)
+          : (isDown ? const Color(0xFF7F1D1D).withValues(alpha: 0.65) : Colors.white.withValues(alpha: 0.15));
+      borderColor = fgColor.withValues(alpha: 0.45);
+    } else {
+      fgColor = isUp
+          ? const Color(0xFF10B981)
+          : (isDown ? const Color(0xFFEF4444) : Colors.grey);
+      bgColor = fgColor.withValues(alpha: 0.14);
+      borderColor = fgColor.withValues(alpha: 0.35);
+    }
+
+    icon = isUp
+        ? Icons.arrow_drop_up_rounded
+        : (isDown ? Icons.arrow_drop_down_rounded : Icons.drag_handle_rounded);
+
+    String text;
+    if (showPercentage) {
+      if (previous == 0 && current > 0) {
+        text = compareLabel != null ? 'Baru ($compareLabel)' : 'Baru (+$current)';
+      } else {
+        final pct = ((current - previous) / previous) * 100;
+        final sign = pct > 0 ? '+' : (pct < 0 ? '-' : '');
+        text = '$sign${pct.abs().toStringAsFixed(1)}%';
+        if (!onHeroCard) {
+          final diffStr = diff > 0 ? '+$diff' : '$diff';
+          text = '$text ($diffStr)';
+        } else if (compareLabel != null) {
+          text = '$text $compareLabel';
+        }
+      }
+    } else {
+      final sign = diff > 0 ? '+' : '';
+      text = '$sign$diff';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: borderColor, width: 0.9),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: fgColor),
+          Text(
+            text,
+            style: TextStyle(
+              color: fgColor,
+              fontSize: 10.5,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSingleBrandQtyBox({
     required String title,
     required int count,
+    required int prevCount,
     required Color accentColor,
     required bool isDark,
   }) {
@@ -936,15 +1054,24 @@ class _ReportScreenState extends State<ReportScreen>
           Expanded(
             child: Center(
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
-                child: Text(
-                  count > 0 ? '$count Unit' : '- Unit',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: count > 0 ? accentColor : Colors.grey,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 17,
-                  ),
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      count > 0 ? '$count Unit' : '- Unit',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: count > 0 ? accentColor : Colors.grey,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 17,
+                      ),
+                    ),
+                    if (count > 0 || prevCount > 0) ...[
+                      const SizedBox(height: 5),
+                      _buildInlineTrendBadge(current: count, previous: prevCount),
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -957,6 +1084,7 @@ class _ReportScreenState extends State<ReportScreen>
   Widget _buildLawrenceSubColumn({
     required String label,
     required int count,
+    required int prevCount,
     required Color accentColor,
     required bool isDark,
   }) {
@@ -985,6 +1113,10 @@ class _ReportScreenState extends State<ReportScreen>
                 fontSize: 17,
               ),
             ),
+            if (count > 0 || prevCount > 0) ...[
+              const SizedBox(height: 5),
+              _buildInlineTrendBadge(current: count, previous: prevCount),
+            ],
           ],
         ),
       ),
@@ -993,7 +1125,9 @@ class _ReportScreenState extends State<ReportScreen>
 
   Widget _buildLawrenceQtyBox({
     required int osCount,
+    required int prevOsCount,
     required int nhCount,
+    required int prevNhCount,
     required bool isDark,
   }) {
     const accentColor = Color(0xFFF59E0B);
@@ -1046,6 +1180,7 @@ class _ReportScreenState extends State<ReportScreen>
                 _buildLawrenceSubColumn(
                   label: 'Ortho Support',
                   count: osCount,
+                  prevCount: prevOsCount,
                   accentColor: accentColor,
                   isDark: isDark,
                 ),
@@ -1056,6 +1191,7 @@ class _ReportScreenState extends State<ReportScreen>
                 _buildLawrenceSubColumn(
                   label: 'Natural Hybrid',
                   count: nhCount,
+                  prevCount: prevNhCount,
                   accentColor: accentColor,
                   isDark: isDark,
                 ),
@@ -1078,6 +1214,19 @@ class _ReportScreenState extends State<ReportScreen>
     final sofaCount = _monthlyQtySummary['sofa'] ?? 0;
     final bedCount = _monthlyQtySummary['bedding'] ?? 0;
     final totalCount = _monthlyQtySummary['total'] ?? 0;
+
+    final prevLawOs = _prevMonthMetrics['lawOs'] ?? 0;
+    final prevLawNh = _prevMonthMetrics['lawNh'] ?? 0;
+    final prevSb = _prevMonthMetrics['superbed'] ?? 0;
+    final prevSofa = _prevMonthMetrics['sofa'] ?? 0;
+    final prevBed = _prevMonthMetrics['bedding'] ?? 0;
+    final prevTotal = _prevMonthMetrics['total'] ?? 0;
+
+    final now = DateTime.now();
+    final prevPeriod = DateFormat('yyyy-MM').format(DateTime(now.year, now.month - 1, 1));
+    final prevShort = _formatShortMonthPeriod(prevPeriod);
+    final currShort = _formatShortMonthPeriod(periode);
+
     final cardColor = Theme.of(context).cardColor;
 
     return Container(
@@ -1115,455 +1264,14 @@ class _ReportScreenState extends State<ReportScreen>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.inventory_2_outlined, color: Colors.white, size: 18),
-                    const SizedBox(width: 8),
-                    Text(
-                      isAdmin ? 'UNIT TERJUAL (SEMUA TOKO)' : 'UNIT TERJUAL BULAN INI',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    _formatIndonesianPeriod(periode),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Body bergaya Kartu Tengah (4 Kartu dengan Colored Borders & Bold Colored Metrics)
-          Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    if (constraints.maxWidth >= 520) {
-                      return IntrinsicHeight(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Expanded(
-                              flex: 2,
-                              child: _buildLawrenceQtyBox(
-                                osCount: lawOs,
-                                nhCount: lawNh,
-                                isDark: isDark,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              flex: 1,
-                              child: _buildSingleBrandQtyBox(
-                                title: 'Superbed',
-                                count: sbCount,
-                                accentColor: const Color(0xFFEA580C),
-                                isDark: isDark,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              flex: 1,
-                              child: _buildSingleBrandQtyBox(
-                                title: 'Sofa',
-                                count: sofaCount,
-                                accentColor: const Color(0xFF3B82F6),
-                                isDark: isDark,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              flex: 1,
-                              child: _buildSingleBrandQtyBox(
-                                title: 'Bedding',
-                                count: bedCount,
-                                accentColor: const Color(0xFF8B5CF6),
-                                isDark: isDark,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    } else {
-                      return Column(
-                        children: [
-                          _buildLawrenceQtyBox(
-                            osCount: lawOs,
-                            nhCount: lawNh,
-                            isDark: isDark,
-                          ),
-                          const SizedBox(height: 10),
-                          IntrinsicHeight(
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Expanded(
-                                  child: _buildSingleBrandQtyBox(
-                                    title: 'Superbed',
-                                    count: sbCount,
-                                    accentColor: const Color(0xFFEA580C),
-                                    isDark: isDark,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _buildSingleBrandQtyBox(
-                                    title: 'Sofa',
-                                    count: sofaCount,
-                                    accentColor: const Color(0xFF3B82F6),
-                                    isDark: isDark,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _buildSingleBrandQtyBox(
-                                    title: 'Bedding',
-                                    count: bedCount,
-                                    accentColor: const Color(0xFF8B5CF6),
-                                    isDark: isDark,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    }
-                  },
-                ),
-
-                const SizedBox(height: 12),
-
-                // Footer Ringkasan Total Unit
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2563EB).withValues(alpha: isDark ? 0.14 : 0.06),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0xFF3B82F6).withValues(alpha: 0.25),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.summarize_outlined,
-                            size: 17,
-                            color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Total Unit Terjual Bulan Ini:',
-                            style: TextStyle(
-                              color: isDark ? Colors.white : const Color(0xFF1E293B),
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: const Color(0xFF10B981).withValues(alpha: 0.4),
-                          ),
-                        ),
-                        child: Text(
-                          '$totalCount Unit',
-                          style: const TextStyle(
-                            color: Color(0xFF10B981),
-                            fontWeight: FontWeight.w800,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatShortMonthPeriod(String period) {
-    try {
-      final parts = period.split('-');
-      if (parts.length == 2) {
-        final y = int.parse(parts[0]);
-        final m = int.parse(parts[1]);
-        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-        if (m >= 1 && m <= 12) return '${months[m - 1]} $y';
-      }
-    } catch (_) {}
-    return period;
-  }
-
-  Widget _buildTrendPill(int current, int previous, {bool isCurrency = false}) {
-    final int diff = current - previous;
-    Color trendColor;
-    IconData trendIcon;
-    String label;
-
-    if (previous == 0 && current == 0) {
-      trendColor = Colors.grey;
-      trendIcon = Icons.remove;
-      label = '0% (Belum ada data)';
-    } else if (previous == 0 && current > 0) {
-      trendColor = const Color(0xFF10B981);
-      trendIcon = Icons.trending_up_rounded;
-      label = isCurrency ? 'Baru (+${_formatRp(current)})' : 'Baru (+$current Unit)';
-    } else {
-      final double pct = ((current - previous) / previous) * 100;
-      final String absPct = pct.abs().toStringAsFixed(1);
-      if (diff > 0) {
-        trendColor = const Color(0xFF10B981);
-        trendIcon = Icons.arrow_upward_rounded;
-        final diffText = isCurrency ? '+${_formatRp(diff)}' : '+$diff';
-        label = '+$absPct% ($diffText)';
-      } else if (diff < 0) {
-        trendColor = const Color(0xFFEF4444);
-        trendIcon = Icons.arrow_downward_rounded;
-        final diffText = isCurrency ? '-${_formatRp(diff.abs())}' : '-${diff.abs()}';
-        label = '-$absPct% ($diffText)';
-      } else {
-        trendColor = Colors.grey;
-        trendIcon = Icons.drag_handle;
-        label = '0.0% (Stabil)';
-      }
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: trendColor.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: trendColor.withValues(alpha: 0.35)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(trendIcon, size: 13, color: trendColor),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: trendColor,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildComparisonMetricBox({
-    required String title,
-    required IconData icon,
-    required Color accentColor,
-    required String currentLabel,
-    required String currentText,
-    required String previousLabel,
-    required String previousText,
-    required int currentVal,
-    required int previousVal,
-    required bool isDark,
-    bool isCurrency = false,
-  }) {
-    final innerCardBg = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: innerCardBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: accentColor.withValues(alpha: 0.35),
-          width: 1.5,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  title.toUpperCase(),
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-                    letterSpacing: 0.4,
-                  ),
-                ),
-              ),
-              Icon(icon, size: 17, color: accentColor),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            currentLabel,
-            style: TextStyle(fontSize: 10.5, color: Colors.grey.shade500),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            currentText,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: isDark ? Colors.white : const Color(0xFF0F172A),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '$previousLabel: $previousText',
-            style: TextStyle(
-              fontSize: 11.5,
-              color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          _buildTrendPill(currentVal, previousVal, isCurrency: isCurrency),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPerformanceComparisonCard({
-    required bool isDark,
-    required bool isAdmin,
-  }) {
-    final now = DateTime.now();
-    final currPeriod = DateFormat('yyyy-MM').format(now);
-    final prevPeriod = DateFormat('yyyy-MM').format(DateTime(now.year, now.month - 1, 1));
-    final currShort = _formatShortMonthPeriod(currPeriod);
-    final prevShort = _formatShortMonthPeriod(prevPeriod);
-
-    final currAmount = _monthlyQtySummary['amount'] ?? 0;
-    final prevAmount = _prevMonthMetrics['amount'] ?? 0;
-    final currTotalQty = _monthlyQtySummary['total'] ?? 0;
-    final prevTotalQty = _prevMonthMetrics['total'] ?? 0;
-    final currTx = _monthlyQtySummary['txCount'] ?? 0;
-    final prevTx = _prevMonthMetrics['txCount'] ?? 0;
-
-    final productCompareRows = [
-      {
-        'label': 'Ortho Support',
-        'curr': _monthlyQtySummary['lawOs'] ?? 0,
-        'prev': _prevMonthMetrics['lawOs'] ?? 0,
-        'color': const Color(0xFFF59E0B),
-      },
-      {
-        'label': 'Natural Hybrid',
-        'curr': _monthlyQtySummary['lawNh'] ?? 0,
-        'prev': _prevMonthMetrics['lawNh'] ?? 0,
-        'color': const Color(0xFFF59E0B),
-      },
-      {
-        'label': 'Superbed',
-        'curr': _monthlyQtySummary['superbed'] ?? 0,
-        'prev': _prevMonthMetrics['superbed'] ?? 0,
-        'color': const Color(0xFFEA580C),
-      },
-      {
-        'label': 'Sofa',
-        'curr': _monthlyQtySummary['sofa'] ?? 0,
-        'prev': _prevMonthMetrics['sofa'] ?? 0,
-        'color': const Color(0xFF3B82F6),
-      },
-      {
-        'label': 'Bedding',
-        'curr': _monthlyQtySummary['bedding'] ?? 0,
-        'prev': _prevMonthMetrics['bedding'] ?? 0,
-        'color': const Color(0xFF8B5CF6),
-      },
-      {
-        'label': 'Transaksi',
-        'curr': currTx,
-        'prev': prevTx,
-        'color': const Color(0xFF10B981),
-      },
-    ];
-
-    final cardColor = Theme.of(context).cardColor;
-
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: const Color(0xFF6366F1).withValues(alpha: 0.35),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF6366F1).withValues(alpha: 0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: isDark
-                    ? [const Color(0xFF312E81), const Color(0xFF1E1B4B)]
-                    : [const Color(0xFF4F46E5), const Color(0xFF4338CA)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
                 Expanded(
                   child: Row(
                     children: [
-                      const Icon(Icons.compare_arrows_rounded, color: Colors.white, size: 19),
+                      const Icon(Icons.inventory_2_outlined, color: Colors.white, size: 18),
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
-                          isAdmin ? 'PERBANDINGAN PERFORMA (SEMUA TOKO)' : 'PERBANDINGAN PERFORMA',
+                          isAdmin ? 'UNIT TERJUAL (SEMUA TOKO)' : 'UNIT TERJUAL BULAN INI',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12.5,
@@ -1584,7 +1292,7 @@ class _ReportScreenState extends State<ReportScreen>
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    '$prevShort vs $currShort',
+                    '$currShort vs $prevShort',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 11,
@@ -1595,6 +1303,8 @@ class _ReportScreenState extends State<ReportScreen>
               ],
             ),
           ),
+
+          // Body bergaya Kartu Tengah (4 Kartu dengan Colored Borders & Tren Komparasi)
           Padding(
             padding: const EdgeInsets.all(14),
             child: Column(
@@ -1602,133 +1312,178 @@ class _ReportScreenState extends State<ReportScreen>
               children: [
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final omsetBox = _buildComparisonMetricBox(
-                      title: isAdmin ? 'Omset Seluruh Toko' : 'Omset Pribadi',
-                      icon: Icons.payments_outlined,
-                      accentColor: const Color(0xFF10B981),
-                      currentLabel: 'Bulan ini ($currShort)',
-                      currentText: _formatRp(currAmount),
-                      previousLabel: prevShort,
-                      previousText: _formatRp(prevAmount),
-                      currentVal: currAmount,
-                      previousVal: prevAmount,
-                      isDark: isDark,
-                      isCurrency: true,
-                    );
-                    final unitBox = _buildComparisonMetricBox(
-                      title: 'Total Unit Terjual',
-                      icon: Icons.inventory_2_outlined,
-                      accentColor: const Color(0xFF3B82F6),
-                      currentLabel: 'Bulan ini ($currShort)',
-                      currentText: '$currTotalQty Unit',
-                      previousLabel: prevShort,
-                      previousText: '$prevTotalQty Unit',
-                      currentVal: currTotalQty,
-                      previousVal: prevTotalQty,
-                      isDark: isDark,
-                      isCurrency: false,
-                    );
-
                     if (constraints.maxWidth >= 520) {
                       return IntrinsicHeight(
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Expanded(child: omsetBox),
+                            Expanded(
+                              flex: 2,
+                              child: _buildLawrenceQtyBox(
+                                osCount: lawOs,
+                                prevOsCount: prevLawOs,
+                                nhCount: lawNh,
+                                prevNhCount: prevLawNh,
+                                isDark: isDark,
+                              ),
+                            ),
                             const SizedBox(width: 10),
-                            Expanded(child: unitBox),
+                            Expanded(
+                              flex: 1,
+                              child: _buildSingleBrandQtyBox(
+                                title: 'Superbed',
+                                count: sbCount,
+                                prevCount: prevSb,
+                                accentColor: const Color(0xFFEA580C),
+                                isDark: isDark,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              flex: 1,
+                              child: _buildSingleBrandQtyBox(
+                                title: 'Sofa',
+                                count: sofaCount,
+                                prevCount: prevSofa,
+                                accentColor: const Color(0xFF3B82F6),
+                                isDark: isDark,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              flex: 1,
+                              child: _buildSingleBrandQtyBox(
+                                title: 'Bedding',
+                                count: bedCount,
+                                prevCount: prevBed,
+                                accentColor: const Color(0xFF8B5CF6),
+                                isDark: isDark,
+                              ),
+                            ),
                           ],
                         ),
                       );
+                    } else {
+                      return Column(
+                        children: [
+                          _buildLawrenceQtyBox(
+                            osCount: lawOs,
+                            prevOsCount: prevLawOs,
+                            nhCount: lawNh,
+                            prevNhCount: prevLawNh,
+                            isDark: isDark,
+                          ),
+                          const SizedBox(height: 10),
+                          IntrinsicHeight(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Expanded(
+                                  child: _buildSingleBrandQtyBox(
+                                    title: 'Superbed',
+                                    count: sbCount,
+                                    prevCount: prevSb,
+                                    accentColor: const Color(0xFFEA580C),
+                                    isDark: isDark,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _buildSingleBrandQtyBox(
+                                    title: 'Sofa',
+                                    count: sofaCount,
+                                    prevCount: prevSofa,
+                                    accentColor: const Color(0xFF3B82F6),
+                                    isDark: isDark,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _buildSingleBrandQtyBox(
+                                    title: 'Bedding',
+                                    count: bedCount,
+                                    prevCount: prevBed,
+                                    accentColor: const Color(0xFF8B5CF6),
+                                    isDark: isDark,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
                     }
-                    return Column(
-                      children: [
-                        omsetBox,
-                        const SizedBox(height: 10),
-                        unitBox,
-                      ],
-                    );
                   },
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  'Rincian Unit per Produk ($currShort vs $prevShort)',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: productCompareRows.map((row) {
-                    final String label = row['label'] as String;
-                    final int c = row['curr'] as int;
-                    final int p = row['prev'] as int;
-                    final Color accent = row['color'] as Color;
-                    final int delta = c - p;
-                    final Color deltaColor = delta > 0
-                        ? const Color(0xFF10B981)
-                        : (delta < 0 ? const Color(0xFFEF4444) : Colors.grey);
-                    final String deltaStr = delta > 0 ? '+$delta' : '$delta';
 
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: accent.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
+                const SizedBox(height: 12),
+
+                // Footer Ringkasan Total Unit beserta Tren Naik/Turun
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2563EB).withValues(alpha: isDark ? 0.14 : 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFF3B82F6).withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Container(
-                            width: 7,
-                            height: 7,
-                            decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+                          Icon(
+                            Icons.summarize_outlined,
+                            size: 17,
+                            color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 8),
                           Text(
-                            '$label: ',
+                            'Total Unit Terjual Bulan Ini:',
                             style: TextStyle(
-                              fontSize: 11.5,
+                              color: isDark ? Colors.white : const Color(0xFF1E293B),
+                              fontSize: 13.5,
                               fontWeight: FontWeight.w600,
-                              color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
                             ),
                           ),
-                          Text(
-                            '$c',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : Colors.black87,
-                            ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildInlineTrendBadge(
+                            current: totalCount,
+                            previous: prevTotal,
+                            showPercentage: true,
                           ),
-                          Text(
-                            ' vs $p ',
-                            style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-                          ),
+                          const SizedBox(width: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                             decoration: BoxDecoration(
-                              color: deltaColor.withValues(alpha: 0.14),
-                              borderRadius: BorderRadius.circular(4),
+                              color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: const Color(0xFF10B981).withValues(alpha: 0.4),
+                              ),
                             ),
                             child: Text(
-                              deltaStr,
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.bold,
-                                color: deltaColor,
+                              '$totalCount Unit',
+                              style: const TextStyle(
+                                color: Color(0xFF10B981),
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
                               ),
                             ),
                           ),
                         ],
                       ),
-                    );
-                  }).toList(),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -2068,10 +1823,24 @@ class _ReportScreenState extends State<ReportScreen>
                                 isAdmin ? 'Total Realisasi Semua Toko' : 'Total Realisasi',
                                 style: const TextStyle(color: Colors.white70, fontSize: 12),
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                _formatRp(personal['actual'] ?? 0),
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                              const SizedBox(height: 3),
+                              Wrap(
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: [
+                                  Text(
+                                    _formatRp(personal['actual'] ?? 0),
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                                  ),
+                                  _buildInlineTrendBadge(
+                                    current: (personal['actual'] as num?)?.toInt() ?? 0,
+                                    previous: _prevRealizationAmount,
+                                    showPercentage: true,
+                                    compareLabel: 'vs ${_formatShortMonthPeriod(DateFormat('yyyy-MM').format(DateTime(DateTime.now().year, DateTime.now().month - 1, 1)))}',
+                                    onHeroCard: true,
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -2190,13 +1959,6 @@ class _ReportScreenState extends State<ReportScreen>
                 isDark: isDark,
                 isAdmin: isAdmin,
                 periode: periode,
-              ),
-              const SizedBox(height: 16),
-
-              // KARTU PERBANDINGAN PERFORMA (BULAN INI VS BULAN LALU)
-              _buildPerformanceComparisonCard(
-                isDark: isDark,
-                isAdmin: isAdmin,
               ),
               const SizedBox(height: 24),
             ] else if (!isAdmin) ...[
