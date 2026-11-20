@@ -122,6 +122,15 @@ class ApiService {
         try {
           final Map<String, dynamic> data = jsonDecode(response.body);
           if (data['status'] == 'success') {
+            final list = data['data'];
+            // Jika hasil kosong saat memakai filter periode, lakukan fallback ambil semua data ID ini
+            // karena bisa jadi format tanggal di Google Sheet berupa format string/GMT (misal 'Wed Nov 18 ...')
+            if (periode != null && periode.isNotEmpty && list is List && list.isEmpty) {
+              final allData = await fetchAttendanceHistory(employeeId: employeeId);
+              if (allData != null && allData['data'] is List && (allData['data'] as List).isNotEmpty) {
+                return allData;
+              }
+            }
             return data;
           }
         } catch (_) {}
@@ -141,6 +150,13 @@ class ApiService {
         try {
           final Map<String, dynamic> data = jsonDecode(response.body);
           if (data['status'] == 'success') {
+            final list = data['data'];
+            if (periode != null && periode.isNotEmpty && list is List && list.isEmpty) {
+              final allData = await fetchAttendanceHistory(employeeId: employeeId);
+              if (allData != null && allData['data'] is List && (allData['data'] as List).isNotEmpty) {
+                return allData;
+              }
+            }
             return data;
           }
         } catch (_) {}

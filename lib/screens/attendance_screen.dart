@@ -197,6 +197,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return period;
   }
 
+  String _formatTimeSnippet(String? rawTs) {
+    if (rawTs == null || rawTs.isEmpty) return '-';
+    final dt = StorageService.parseTimestamp(rawTs);
+    if (dt != null) {
+      final h = dt.hour.toString().padLeft(2, '0');
+      final m = dt.minute.toString().padLeft(2, '0');
+      return '$h:$m';
+    }
+    return rawTs;
+  }
+
   Future<void> _fetchLocation() async {
     final address = await widget.locationService.getCurrentAddress();
     if (mounted) {
@@ -636,18 +647,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       }
     }
 
-    String formatTimeSnippet(String? rawTs) {
-      if (rawTs == null || rawTs.isEmpty) return '-';
-      try {
-        final parts = rawTs.split(' ');
-        if (parts.length > 1) {
-          final t = parts[1];
-          return t.length >= 5 ? t.substring(0, 5) : t;
-        }
-      } catch (_) {}
-      return rawTs;
-    }
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -769,7 +768,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          formatTimeSnippet(_todayStatus.firstClockInTime),
+                          _formatTimeSnippet(_todayStatus.firstClockInTime),
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.bold,
@@ -808,7 +807,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          isOngoing ? _t('Active') : formatTimeSnippet(_todayStatus.lastClockOutTime),
+                          isOngoing ? _t('Active') : _formatTimeSnippet(_todayStatus.lastClockOutTime),
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.bold,
@@ -980,11 +979,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
     String timeSnippet = '-';
     if (log.clockInTime != null) {
-      final inT = log.clockInTime!.split(' ')[1];
-      final inShort = inT.length >= 5 ? inT.substring(0, 5) : inT;
+      final inShort = _formatTimeSnippet(log.clockInTime);
       if (log.clockOutTime != null) {
-        final outT = log.clockOutTime!.split(' ')[1];
-        final outShort = outT.length >= 5 ? outT.substring(0, 5) : outT;
+        final outShort = _formatTimeSnippet(log.clockOutTime);
         timeSnippet = '$inShort - $outShort';
       } else if (log.isOngoing) {
         timeSnippet = '$inShort - ${_t('Active')}';

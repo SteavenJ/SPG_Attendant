@@ -173,6 +173,52 @@ class StorageService {
   static const String keyEvents = 'attendance_events';
   static const String keySavedEmployeeId = 'saved_employee_id';
 
+  // Helper untuk mem-parsing berbagai format tanggal (ISO maupun format Google Sheet)
+  static DateTime? parseTimestamp(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final trimmed = raw.trim();
+
+    // 1. Direct ISO parse (e.g. "2026-11-20 08:30:15" or "2026-11-20T08:30:15")
+    final direct = DateTime.tryParse(trimmed);
+    if (direct != null) return direct;
+
+    // 2. Format from Google Sheet: "Wed Nov 18 2026 11:04:30 GMT+0800 (Waktu Indonesia Tengah)"
+    try {
+      final clean = trimmed.replaceAll(RegExp(r'\s*\([^)]*\)$'), '').trim();
+      final parts = clean.split(' ');
+      if (parts.length >= 5) {
+        const monthMap = {
+          'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+          'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
+        };
+        final m = monthMap[parts[1]];
+        final d = int.tryParse(parts[2]);
+        final y = int.tryParse(parts[3]);
+        final timeParts = parts[4].split(':');
+        if (m != null && d != null && y != null && timeParts.length >= 2) {
+          final hour = int.tryParse(timeParts[0]) ?? 0;
+          final minute = int.tryParse(timeParts[1]) ?? 0;
+          final second = timeParts.length >= 3 ? (int.tryParse(timeParts[2]) ?? 0) : 0;
+          return DateTime(y, m, d, hour, minute, second);
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  // Normalisasi timestamp ke format standar 'yyyy-MM-dd HH:mm:ss'
+  static String normalizeTimestamp(String? raw) {
+    final dt = parseTimestamp(raw);
+    if (dt == null) return raw ?? '';
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    final hh = dt.hour.toString().padLeft(2, '0');
+    final mm = dt.minute.toString().padLeft(2, '0');
+    final ss = dt.second.toString().padLeft(2, '0');
+    return '$y-$m-$d $hh:$mm:$ss';
+  }
+
   // Save the remembered employee ID
   Future<void> setSavedEmployeeId(String id) async {
     final prefs = await SharedPreferences.getInstance();
@@ -204,9 +250,10 @@ class StorageService {
   }) async {
     final prefs = await SharedPreferences.getInstance();
     List<String> eventsList = prefs.getStringList(keyEvents) ?? [];
+    final normalizedTs = normalizeTimestamp(timestamp);
     
     eventsList.add(jsonEncode({
-      'timestamp': timestamp,
+      'timestamp': normalizedTs,
       'employeeId': employeeId,
       'type': type,
       if (address != null && address.isNotEmpty) 'address': address,
@@ -229,12 +276,16 @@ class StorageService {
 
     List<Map<String, dynamic>> todayEvents = events.where((event) {
       if (event['employeeId'] != employeeId) return false;
-      final time = DateTime.tryParse(event['timestamp'] ?? '');
+      final time = parseTimestamp(event['timestamp']?.toString());
       if (time == null) return false;
       return time.year == now.year && time.month == now.month && time.day == now.day;
     }).toList();
 
-    todayEvents.sort((a, b) => (a['timestamp'] ?? '').compareTo(b['timestamp'] ?? ''));
+    todayEvents.sort((a, b) {
+      final tA = parseTimestamp(a['timestamp']?.toString()) ?? DateTime(0);
+      final tB = parseTimestamp(b['timestamp']?.toString()) ?? DateTime(0);
+      return tA.compareTo(tB);
+    });
 
     if (todayEvents.isEmpty) {
       return TodayAttendanceStatus.empty();
@@ -247,7 +298,7 @@ class StorageService {
 
     for (var ev in todayEvents) {
       final type = ev['type'];
-      final time = DateTime.tryParse(ev['timestamp'] ?? '');
+      final time = parseTimestamp(ev['timestamp']?.toString());
       if (time == null) continue;
 
       if (type == 'Clock In') {
@@ -317,12 +368,16 @@ class StorageService {
 
       final dayEvents = events.where((ev) {
         if (ev['employeeId'] != employeeId) return false;
-        final t = DateTime.tryParse(ev['timestamp'] ?? '');
+        final t = parseTimestamp(ev['timestamp']?.toString());
         if (t == null) return false;
         return t.year == targetDay.year && t.month == targetDay.month && t.day == targetDay.day;
       }).toList();
 
-      dayEvents.sort((a, b) => (a['timestamp'] ?? '').compareTo(b['timestamp'] ?? ''));
+      dayEvents.sort((a, b) {
+        final tA = parseTimestamp(a['timestamp']?.toString()) ?? DateTime(0);
+        final tB = parseTimestamp(b['timestamp']?.toString()) ?? DateTime(0);
+        return tA.compareTo(tB);
+      });
 
       if (dayEvents.isEmpty) {
         final bool isFuture = targetDay.isAfter(todayZero);
@@ -343,7 +398,7 @@ class StorageService {
 
       for (var ev in dayEvents) {
         final type = ev['type'];
-        final t = DateTime.tryParse(ev['timestamp'] ?? '');
+        final t = parseTimestamp(ev['timestamp']?.toString());
         if (t == null) continue;
 
         recordedAddress ??= ev['address']?.toString();
@@ -463,12 +518,16 @@ class StorageService {
 
       final dayEvents = events.where((ev) {
         if (ev['employeeId'] != employeeId) return false;
-        final t = DateTime.tryParse(ev['timestamp'] ?? '');
+        final t = parseTimestamp(ev['timestamp']?.toString());
         if (t == null) return false;
         return t.year == year && t.month == month && t.day == day;
       }).toList();
 
-      dayEvents.sort((a, b) => (a['timestamp'] ?? '').compareTo(b['timestamp'] ?? ''));
+      dayEvents.sort((a, b) {
+        final tA = parseTimestamp(a['timestamp']?.toString()) ?? DateTime(0);
+        final tB = parseTimestamp(b['timestamp']?.toString()) ?? DateTime(0);
+        return tA.compareTo(tB);
+      });
 
       if (dayEvents.isEmpty) {
         final bool isFuture = targetDay.isAfter(todayZero);
@@ -492,7 +551,7 @@ class StorageService {
 
       for (var ev in dayEvents) {
         final type = ev['type'];
-        final t = DateTime.tryParse(ev['timestamp'] ?? '');
+        final t = parseTimestamp(ev['timestamp']?.toString());
         if (t == null) continue;
 
         recordedAddress ??= ev['address']?.toString();
@@ -582,7 +641,10 @@ class StorageService {
     for (var str in eventsList) {
       try {
         final map = jsonDecode(str) as Map<String, dynamic>;
-        final sig = '${map['employeeId']}_${map['timestamp']}_${map['type']}';
+        final empId = map['employeeId']?.toString().trim() ?? '';
+        final normTs = normalizeTimestamp(map['timestamp']?.toString());
+        final type = map['type']?.toString().trim() ?? '';
+        final sig = '${empId}_${normTs}_$type';
         existingSignatures.add(sig);
       } catch (_) {}
     }
@@ -597,12 +659,13 @@ class StorageService {
       final addr = map['address']?.toString().trim() ?? '';
 
       if (empId.isEmpty || ts.isEmpty || type.isEmpty) continue;
-      final sig = '${empId}_${ts}_$type';
+      final normTs = normalizeTimestamp(ts);
+      final sig = '${empId}_${normTs}_$type';
 
       if (!existingSignatures.contains(sig)) {
         existingSignatures.add(sig);
         eventsList.add(jsonEncode({
-          'timestamp': ts,
+          'timestamp': normTs,
           'employeeId': empId,
           'type': type,
           if (addr.isNotEmpty) 'address': addr,
