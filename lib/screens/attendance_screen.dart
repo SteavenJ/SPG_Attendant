@@ -16,11 +16,11 @@ class AttendanceScreen extends StatefulWidget {
   final StorageService storageService;
 
   const AttendanceScreen({
-    Key? key,
+    super.key,
     required this.apiService,
     required this.locationService,
     required this.storageService,
-  }) : super(key: key);
+  });
 
   @override
   State<AttendanceScreen> createState() => _AttendanceScreenState();
@@ -37,6 +37,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   String _clockState = 'Clock In';
   Duration _timeOffset = Duration.zero;
   Map<String, String> _promotorNames = {};
+  TodayAttendanceStatus _todayStatus = TodayAttendanceStatus.empty();
+  WeeklyAttendanceSummary _weeklySummary = WeeklyAttendanceSummary.empty();
+  bool _showWeeklyBreakdown = false;
 
   @override
   void initState() {
@@ -119,6 +122,27 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       'Please enter an Employee ID': 'Harap masukkan ID Karyawan',
       'Attendance recorded!': 'Kehadiran dicatat!',
       'Failed to record attendance': 'Gagal mencatat kehadiran',
+      'Today\'s Attendance Status': 'Status Kehadiran Hari Ini',
+      'Currently Working': 'Sedang Aktif Bekerja',
+      'Shift Completed': 'Shift Selesai',
+      'Not Clocked In Yet': 'Belum Absen Masuk',
+      'Clock In Time': 'Jam Masuk',
+      'Clock Out Time': 'Jam Pulang',
+      'Work Duration Today': 'Durasi Hari Ini',
+      'Location': 'Lokasi',
+      'Total Weekly Hours': 'Total Jam Minggu Ini',
+      'Days Present': 'Hari Masuk',
+      'Daily Average': 'Rata-rata Harian',
+      'Show Daily Details': 'Lihat Rincian Harian',
+      'Hide Daily Details': 'Tutup Rincian Harian',
+      'Today': 'Hari Ini',
+      'Standard 8 Hours': 'Standar 8 Jam',
+      'Active': 'Aktif',
+      'Off / No Attendance': 'Libur / Tidak Hadir',
+      'Missed Clock Out': 'Lupa Clock Out',
+      'Hours': 'Jam',
+      'Hours/Day': 'Jam/Hari',
+      'Days': 'Hari',
     };
     return dict[key] ?? key;
   }
@@ -137,13 +161,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (empId.isNotEmpty) {
       await widget.storageService.setSavedEmployeeId(empId);
     }
-    final state = await widget.storageService.getClockStateToday(empId);
-    final hours = await widget.storageService.getWeeklyHours(empId);
+    final todayStatus = await widget.storageService.getTodayAttendanceStatus(empId);
+    final weeklySummary = await widget.storageService.getWeeklyAttendanceSummary(empId);
     
     if (mounted) {
       setState(() {
-        _clockState = state;
-        _weeklyHours = hours;
+        _clockState = todayStatus.nextState;
+        _todayStatus = todayStatus;
+        _weeklySummary = weeklySummary;
+        _weeklyHours = weeklySummary.hoursPerDay;
       });
     }
   }
@@ -183,22 +209,29 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     );
 
     if (success) {
-      await widget.storageService.saveEvent(_currentTime, empId, _clockState);
+      await widget.storageService.saveEvent(
+        _currentTime,
+        empId,
+        _clockState,
+        address: _currentAddress,
+      );
       await _onEmployeeIdChanged(); // Refresh state
     }
 
-    setState(() {
-      _isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
 
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_t('Attendance recorded!'))),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_t('Failed to record attendance'))),
-      );
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_t('Attendance recorded!'))),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_t('Failed to record attendance'))),
+        );
+      }
     }
   }
 
@@ -260,17 +293,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               const SizedBox(height: 32),
               
               _buildActionButton().animate().fade(delay: 500.ms).scale(begin: const Offset(0.9, 0.9)),
-              const SizedBox(height: 40),
+              const SizedBox(height: 24),
               
-              if (_weeklyHours.isNotEmpty) ...[
-                Text(
-                  _t('Weekly Summary'),
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: textColor),
-                ).animate().fade(delay: 600.ms),
-                const SizedBox(height: 16),
-                AttendanceGraph(weeklyHours: _weeklyHours, cardColor: cardColor, textColor: textColor)
-                  .animate().fade(delay: 700.ms).slideY(begin: 0.1),
-              ],
+              _buildTodayShiftCard(cardColor, textColor, subTextColor).animate().fade(delay: 550.ms).slideY(begin: 0.1),
+              const SizedBox(height: 32),
+              
+              _buildWeeklySummarySection(cardColor, textColor, subTextColor).animate().fade(delay: 600.ms).slideY(begin: 0.1),
               const SizedBox(height: 40),
             ],
           ),
@@ -291,7 +319,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),
@@ -323,14 +351,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         color: cardColor,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
-          BoxShadow(color: isDark ? Colors.black54 : Colors.black.withOpacity(0.03), blurRadius: 15, offset: const Offset(0, 5)),
+          BoxShadow(color: isDark ? Colors.black54 : Colors.black.withValues(alpha: 0.03), blurRadius: 15, offset: const Offset(0, 5)),
         ],
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), shape: BoxShape.circle),
+            decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.1), shape: BoxShape.circle),
             child: const Icon(Icons.location_on, color: Colors.redAccent),
           ),
           const SizedBox(width: 16),
@@ -366,7 +394,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             color: cardColor,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
-              BoxShadow(color: isDark ? Colors.black54 : Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
+              BoxShadow(color: isDark ? Colors.black54 : Colors.black.withValues(alpha: 0.02), blurRadius: 10, offset: const Offset(0, 4)),
             ],
           ),
           child: TextField(
@@ -418,7 +446,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
-          BoxShadow(color: btnColor.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 8)),
+          BoxShadow(color: btnColor.withValues(alpha: 0.3), blurRadius: 20, offset: const Offset(0, 8)),
         ],
       ),
       child: ElevatedButton(
@@ -440,6 +468,697 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildTodayShiftCard(Color cardColor, Color textColor, Color subTextColor) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final empId = _employeeIdController.text.trim();
+
+    if (empId.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final bool isOngoing = _todayStatus.isOngoing;
+    final bool hasClockedOut = _todayStatus.hasClockedOut;
+    final bool hasClockedIn = _todayStatus.hasClockedIn;
+
+    Color badgeBg;
+    Color badgeFg;
+    Color borderColor;
+    String statusLabel;
+    IconData statusIcon;
+
+    if (isOngoing) {
+      badgeFg = const Color(0xFF10B981);
+      badgeBg = badgeFg.withValues(alpha: isDark ? 0.2 : 0.12);
+      borderColor = badgeFg.withValues(alpha: 0.4);
+      statusLabel = _t('Currently Working');
+      statusIcon = Icons.radio_button_checked_rounded;
+    } else if (hasClockedOut) {
+      badgeFg = const Color(0xFF3B82F6);
+      badgeBg = badgeFg.withValues(alpha: isDark ? 0.2 : 0.12);
+      borderColor = badgeFg.withValues(alpha: 0.4);
+      statusLabel = _t('Shift Completed');
+      statusIcon = Icons.check_circle_outline_rounded;
+    } else if (hasClockedIn) {
+      badgeFg = const Color(0xFFF59E0B);
+      badgeBg = badgeFg.withValues(alpha: isDark ? 0.2 : 0.12);
+      borderColor = badgeFg.withValues(alpha: 0.4);
+      statusLabel = _t('Clock In');
+      statusIcon = Icons.login_rounded;
+    } else {
+      badgeFg = Colors.grey;
+      badgeBg = badgeFg.withValues(alpha: isDark ? 0.15 : 0.1);
+      borderColor = isDark ? Colors.white12 : Colors.grey.shade300;
+      statusLabel = _t('Not Clocked In Yet');
+      statusIcon = Icons.access_time_rounded;
+    }
+
+    String durationText = '-';
+    if (_todayStatus.todayHours > 0) {
+      final totalMins = (_todayStatus.todayHours * 60).round();
+      final h = totalMins ~/ 60;
+      final m = totalMins % 60;
+      durationText = h > 0 ? '$h Jam $m Mnt' : '$m Menit';
+      if (isOngoing) {
+        durationText = '$durationText (${_t('Active')})';
+      }
+    }
+
+    String formatTimeSnippet(String? rawTs) {
+      if (rawTs == null || rawTs.isEmpty) return '-';
+      try {
+        final parts = rawTs.split(' ');
+        if (parts.length > 1) {
+          final t = parts[1];
+          return t.length >= 5 ? t.substring(0, 5) : t;
+        }
+      } catch (_) {}
+      return rawTs;
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isOngoing
+              ? const Color(0xFF10B981).withValues(alpha: 0.35)
+              : (isDark ? Colors.white12 : Colors.grey.shade200),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isDark ? Colors.black54 : Colors.black.withValues(alpha: 0.02),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.badge_outlined,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _t('Today\'s Attendance Status'),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: textColor,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: badgeBg,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: borderColor, width: 1),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(statusIcon, size: 13, color: badgeFg),
+                    const SizedBox(width: 5),
+                    Text(
+                      statusLabel,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: badgeFg,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (!hasClockedIn)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade200),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.blueAccent, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Tekan tombol MASUK di atas saat Anda tiba di toko untuk mencatat kehadiran hari ini.',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: subTextColor,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.login_rounded, size: 14, color: Color(0xFF10B981)),
+                            const SizedBox(width: 6),
+                            Text(
+                              _t('Clock In Time'),
+                              style: TextStyle(fontSize: 11, color: subTextColor, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          formatTimeSnippet(_todayStatus.firstClockInTime),
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                            color: textColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.logout_rounded,
+                              size: 14,
+                              color: isOngoing ? const Color(0xFFF59E0B) : const Color(0xFF3B82F6),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              _t('Clock Out Time'),
+                              style: TextStyle(fontSize: 11, color: subTextColor, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          isOngoing ? _t('Active') : formatTimeSnippet(_todayStatus.lastClockOutTime),
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                            color: isOngoing ? const Color(0xFFF59E0B) : textColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2563EB).withValues(alpha: isDark ? 0.14 : 0.06),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF3B82F6).withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.timer_outlined, size: 16, color: Color(0xFF2563EB)),
+                      const SizedBox(width: 8),
+                      Text(
+                        _t('Work Duration Today'),
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: textColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    durationText,
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF2563EB),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (_todayStatus.clockInAddress != null && _todayStatus.clockInAddress!.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.location_on_outlined, size: 15, color: Colors.redAccent),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _todayStatus.clockInAddress!,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: subTextColor,
+                        height: 1.3,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricMiniCard({
+    required Color cardColor,
+    required Color textColor,
+    required Color subTextColor,
+    required IconData icon,
+    required Color accentColor,
+    required String title,
+    required String value,
+    required bool isDark,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark ? Colors.white10 : Colors.grey.shade200,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isDark ? Colors.black45 : Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 17, color: accentColor),
+          const SizedBox(height: 6),
+          Text(
+            title,
+            style: TextStyle(fontSize: 10.5, color: subTextColor, fontWeight: FontWeight.w600),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w800,
+              color: textColor,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDailyLogCard({
+    required DailyAttendanceLog log,
+    required Color cardColor,
+    required Color textColor,
+    required Color subTextColor,
+    required bool isDark,
+    required bool isIndo,
+  }) {
+    final now = DateTime.now();
+    final bool isToday = log.date.year == now.year &&
+        log.date.month == now.month &&
+        log.date.day == now.day;
+
+    String dayName;
+    if (isIndo) {
+      const days = ['', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+      dayName = days[log.weekday];
+    } else {
+      const days = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      dayName = days[log.weekday];
+    }
+
+    final dateStr = DateFormat('d MMM').format(log.date);
+
+    Color badgeColor;
+    Color badgeBg;
+    if (log.isOngoing) {
+      badgeColor = const Color(0xFF10B981);
+      badgeBg = badgeColor.withValues(alpha: isDark ? 0.2 : 0.12);
+    } else if (log.hours > 0 && !log.missedClockOut) {
+      badgeColor = const Color(0xFF2563EB);
+      badgeBg = badgeColor.withValues(alpha: isDark ? 0.2 : 0.12);
+    } else if (log.missedClockOut) {
+      badgeColor = const Color(0xFFF59E0B);
+      badgeBg = badgeColor.withValues(alpha: isDark ? 0.2 : 0.12);
+    } else {
+      badgeColor = Colors.grey;
+      badgeBg = badgeColor.withValues(alpha: isDark ? 0.15 : 0.08);
+    }
+
+    String timeSnippet = '-';
+    if (log.clockInTime != null) {
+      final inT = log.clockInTime!.split(' ')[1];
+      final inShort = inT.length >= 5 ? inT.substring(0, 5) : inT;
+      if (log.clockOutTime != null) {
+        final outT = log.clockOutTime!.split(' ')[1];
+        final outShort = outT.length >= 5 ? outT.substring(0, 5) : outT;
+        timeSnippet = '$inShort - $outShort';
+      } else if (log.isOngoing) {
+        timeSnippet = '$inShort - ${_t('Active')}';
+      } else {
+        timeSnippet = '$inShort - (${_t('Missed Clock Out')})';
+      }
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isToday
+              ? const Color(0xFF10B981).withValues(alpha: 0.4)
+              : (isDark ? Colors.white10 : Colors.grey.shade200),
+          width: isToday ? 1.4 : 1.0,
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        '$dayName, $dateStr',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: textColor,
+                        ),
+                      ),
+                      if (isToday) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            _t('Today'),
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF10B981),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    timeSnippet,
+                    style: TextStyle(fontSize: 11.5, color: subTextColor),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: badgeBg,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: badgeColor.withValues(alpha: 0.3)),
+            ),
+            child: Text(
+              log.hours > 0 ? '${log.hours} ${_t('Hours')}' : (log.status == 'Mendatang' ? '-' : _t('Off / No Attendance')),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: badgeColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWeeklySummarySection(Color cardColor, Color textColor, Color subTextColor) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    bool isIndo = MyApp.of(context)?.isIndonesian ?? false;
+
+    final startStr = DateFormat('d MMM').format(_weeklySummary.startOfWeek);
+    final endStr = DateFormat('d MMM').format(_weeklySummary.endOfWeek);
+    final rangeText = '$startStr - $endStr';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.insights_rounded,
+                  size: 22,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _t('Weekly Summary'),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: textColor),
+                ),
+              ],
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white10 : Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                rangeText,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+
+        // 3 METRICS MINI CARDS
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricMiniCard(
+                cardColor: cardColor,
+                textColor: textColor,
+                subTextColor: subTextColor,
+                icon: Icons.timer_outlined,
+                accentColor: const Color(0xFF2563EB),
+                title: _t('Total Weekly Hours'),
+                value: '${_weeklySummary.totalHours} ${_t('Hours')}',
+                isDark: isDark,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildMetricMiniCard(
+                cardColor: cardColor,
+                textColor: textColor,
+                subTextColor: subTextColor,
+                icon: Icons.event_available_outlined,
+                accentColor: const Color(0xFF10B981),
+                title: _t('Days Present'),
+                value: '${_weeklySummary.daysPresent} ${_t('Days')}',
+                isDark: isDark,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildMetricMiniCard(
+                cardColor: cardColor,
+                textColor: textColor,
+                subTextColor: subTextColor,
+                icon: Icons.speed_outlined,
+                accentColor: const Color(0xFFF59E0B),
+                title: _t('Daily Average'),
+                value: '${_weeklySummary.avgHoursPerDay}h',
+                isDark: isDark,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // BAR CHART
+        AttendanceGraph(
+          weeklyHours: _weeklyHours,
+          cardColor: cardColor,
+          textColor: textColor,
+          todayWeekday: DateTime.now().weekday,
+          isIndonesian: isIndo,
+        ),
+        const SizedBox(height: 10),
+
+        // LEGEND ROW
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    _t('Today'),
+                    style: TextStyle(fontSize: 11, color: subTextColor),
+                  ),
+                  const SizedBox(width: 14),
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    _t('Active'),
+                    style: TextStyle(fontSize: 11, color: subTextColor),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  Text(
+                    '--- ${_t('Standard 8 Hours')}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.blue.shade300 : const Color(0xFF2563EB),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // TOGGLE BUTTON RINCIAN HARIAN
+        Center(
+          child: TextButton.icon(
+            onPressed: () {
+              setState(() {
+                _showWeeklyBreakdown = !_showWeeklyBreakdown;
+              });
+            },
+            icon: Icon(
+              _showWeeklyBreakdown
+                  ? Icons.keyboard_arrow_up_rounded
+                  : Icons.keyboard_arrow_down_rounded,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            label: Text(
+              _showWeeklyBreakdown
+                  ? _t('Hide Daily Details')
+                  : _t('Show Daily Details'),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ),
+        ),
+
+        // LIST RINCIAN HARIAN (EXPANDED)
+        if (_showWeeklyBreakdown) ...[
+          const SizedBox(height: 8),
+          ..._weeklySummary.dailyLogs.map((log) => _buildDailyLogCard(
+                log: log,
+                cardColor: cardColor,
+                textColor: textColor,
+                subTextColor: subTextColor,
+                isDark: isDark,
+                isIndo: isIndo,
+              )),
+        ],
+      ],
     );
   }
 }
