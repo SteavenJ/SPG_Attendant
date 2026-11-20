@@ -106,6 +106,69 @@ class WeeklyAttendanceSummary {
   }
 }
 
+class MonthlyAttendanceSummary {
+  final String period; // e.g. '2026-11'
+  final int year;
+  final int month;
+  final int totalDaysInMonth;
+  final int standardWorkingDays; // perkiraan hari kerja non-Minggu dalam bulan
+  final double totalHours;
+  final int daysPresent;
+  final double avgHoursPerDay;
+  final double attendancePercentage; // (daysPresent / standardWorkingDays) * 100
+  final List<DailyAttendanceLog> dailyLogs;
+
+  const MonthlyAttendanceSummary({
+    required this.period,
+    required this.year,
+    required this.month,
+    required this.totalDaysInMonth,
+    required this.standardWorkingDays,
+    required this.totalHours,
+    required this.daysPresent,
+    required this.avgHoursPerDay,
+    required this.attendancePercentage,
+    required this.dailyLogs,
+  });
+
+  factory MonthlyAttendanceSummary.empty({String? period}) {
+    final now = DateTime.now();
+    int y = now.year;
+    int m = now.month;
+    if (period != null && period.contains('-')) {
+      final parts = period.split('-');
+      y = int.tryParse(parts[0]) ?? now.year;
+      m = int.tryParse(parts[1]) ?? now.month;
+    }
+    final daysInMonth = DateTime(y, m + 1, 0).day;
+    int workingDays = 0;
+    final emptyLogs = List.generate(daysInMonth, (index) {
+      final d = DateTime(y, m, index + 1);
+      if (d.weekday != DateTime.sunday) workingDays++;
+      return DailyAttendanceLog(
+        date: d,
+        weekday: d.weekday,
+        hours: 0.0,
+        status: 'Belum Ada Absen',
+      );
+    });
+
+    final pStr = '$y-${m.toString().padLeft(2, '0')}';
+    return MonthlyAttendanceSummary(
+      period: pStr,
+      year: y,
+      month: m,
+      totalDaysInMonth: daysInMonth,
+      standardWorkingDays: workingDays > 0 ? workingDays : 26,
+      totalHours: 0.0,
+      daysPresent: 0,
+      avgHoursPerDay: 0.0,
+      attendancePercentage: 0.0,
+      dailyLogs: emptyLogs,
+    );
+  }
+}
+
 class StorageService {
   static const String keyEvents = 'attendance_events';
   static const String keySavedEmployeeId = 'saved_employee_id';
@@ -359,5 +422,197 @@ class StorageService {
   Future<Map<int, double>> getWeeklyHours(String employeeId) async {
     final summary = await getWeeklyAttendanceSummary(employeeId);
     return summary.hoursPerDay;
+  }
+
+  // Dapatkan ringkasan lengkap kehadiran bulanan (tanggal 1 s/d akhir bulan)
+  Future<MonthlyAttendanceSummary> getMonthlyAttendanceSummary(
+    String employeeId, {
+    String? targetMonth,
+  }) async {
+    final now = DateTime.now();
+    final todayZero = DateTime(now.year, now.month, now.day);
+
+    int year = now.year;
+    int month = now.month;
+    if (targetMonth != null && targetMonth.contains('-')) {
+      final parts = targetMonth.split('-');
+      year = int.tryParse(parts[0]) ?? now.year;
+      month = int.tryParse(parts[1]) ?? now.month;
+    }
+    final String periodKey = '$year-${month.toString().padLeft(2, '0')}';
+    final int daysInMonth = DateTime(year, month + 1, 0).day;
+
+    if (employeeId.trim().isEmpty) {
+      return MonthlyAttendanceSummary.empty(period: periodKey);
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    List<String> eventsList = prefs.getStringList(keyEvents) ?? [];
+    List<Map<String, dynamic>> events = eventsList
+        .map((e) => jsonDecode(e) as Map<String, dynamic>)
+        .toList();
+
+    int standardWorkingDays = 0;
+    final List<DailyAttendanceLog> dailyLogs = [];
+
+    for (int day = 1; day <= daysInMonth; day++) {
+      final targetDay = DateTime(year, month, day);
+      if (targetDay.weekday != DateTime.sunday) {
+        standardWorkingDays++;
+      }
+
+      final dayEvents = events.where((ev) {
+        if (ev['employeeId'] != employeeId) return false;
+        final t = DateTime.tryParse(ev['timestamp'] ?? '');
+        if (t == null) return false;
+        return t.year == year && t.month == month && t.day == day;
+      }).toList();
+
+      dayEvents.sort((a, b) => (a['timestamp'] ?? '').compareTo(b['timestamp'] ?? ''));
+
+      if (dayEvents.isEmpty) {
+        final bool isFuture = targetDay.isAfter(todayZero);
+        final bool isSunday = targetDay.weekday == DateTime.sunday;
+        dailyLogs.add(DailyAttendanceLog(
+          date: targetDay,
+          weekday: targetDay.weekday,
+          hours: 0.0,
+          status: isFuture
+              ? 'Mendatang'
+              : (isSunday ? 'Libur Hari Minggu' : 'Tidak Ada Absen'),
+        ));
+        continue;
+      }
+
+      String? firstInTime;
+      String? lastOutTime;
+      String? recordedAddress;
+      DateTime? openClockIn;
+      double workedMinutes = 0.0;
+
+      for (var ev in dayEvents) {
+        final type = ev['type'];
+        final t = DateTime.tryParse(ev['timestamp'] ?? '');
+        if (t == null) continue;
+
+        recordedAddress ??= ev['address']?.toString();
+
+        if (type == 'Clock In') {
+          firstInTime ??= ev['timestamp'];
+          openClockIn = t;
+        } else if (type == 'Clock Out' && openClockIn != null) {
+          lastOutTime = ev['timestamp'];
+          recordedAddress = ev['address']?.toString() ?? recordedAddress;
+          workedMinutes += t.difference(openClockIn).inMinutes;
+          openClockIn = null;
+        }
+      }
+
+      bool isOngoing = false;
+      bool missedClockOut = false;
+      String status = 'Hadir (Selesai)';
+
+      if (openClockIn != null) {
+        final bool isToday = targetDay.year == todayZero.year &&
+            targetDay.month == todayZero.month &&
+            targetDay.day == todayZero.day;
+
+        if (isToday) {
+          isOngoing = true;
+          final elapsed = now.difference(openClockIn).inMinutes;
+          workedMinutes += elapsed > 0 ? elapsed : 0;
+          status = 'Sedang Aktif';
+        } else {
+          missedClockOut = true;
+          if (workedMinutes <= 0) {
+            workedMinutes = 8 * 60.0;
+          }
+          status = 'Lupa Clock Out (Estimasi 8h)';
+        }
+      }
+
+      final dayHours = double.parse((workedMinutes / 60.0).toStringAsFixed(1));
+
+      dailyLogs.add(DailyAttendanceLog(
+        date: targetDay,
+        weekday: targetDay.weekday,
+        clockInTime: firstInTime,
+        clockOutTime: lastOutTime,
+        address: recordedAddress,
+        hours: dayHours,
+        status: status,
+        isOngoing: isOngoing,
+        missedClockOut: missedClockOut,
+      ));
+    }
+
+    final totalHours = double.parse(
+      dailyLogs.fold(0.0, (sum, l) => sum + l.hours).toStringAsFixed(1),
+    );
+    final daysPresent = dailyLogs.where((l) => l.hours > 0 || l.clockInTime != null).length;
+    final avgHours = daysPresent > 0
+        ? double.parse((totalHours / daysPresent).toStringAsFixed(1))
+        : 0.0;
+    final attendancePct = standardWorkingDays > 0
+        ? double.parse(((daysPresent / standardWorkingDays) * 100.0).clamp(0.0, 100.0).toStringAsFixed(1))
+        : 0.0;
+
+    return MonthlyAttendanceSummary(
+      period: periodKey,
+      year: year,
+      month: month,
+      totalDaysInMonth: daysInMonth,
+      standardWorkingDays: standardWorkingDays > 0 ? standardWorkingDays : 26,
+      totalHours: totalHours,
+      daysPresent: daysPresent,
+      avgHoursPerDay: avgHours,
+      attendancePercentage: attendancePct,
+      dailyLogs: dailyLogs,
+    );
+  }
+
+  // Menggabungkan data event absensi dari server (Google Sheet) ke local cache tanpa duplikasi
+  Future<void> mergeExternalAttendanceEvents(List<dynamic> rawExternalList) async {
+    if (rawExternalList.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    List<String> eventsList = prefs.getStringList(keyEvents) ?? [];
+    Set<String> existingSignatures = {};
+
+    for (var str in eventsList) {
+      try {
+        final map = jsonDecode(str) as Map<String, dynamic>;
+        final sig = '${map['employeeId']}_${map['timestamp']}_${map['type']}';
+        existingSignatures.add(sig);
+      } catch (_) {}
+    }
+
+    bool addedAny = false;
+    for (var raw in rawExternalList) {
+      if (raw is! Map) continue;
+      final map = Map<String, dynamic>.from(raw);
+      final empId = map['employeeId']?.toString().trim() ?? '';
+      final ts = map['timestamp']?.toString().trim() ?? '';
+      final type = map['type']?.toString().trim() ?? '';
+      final addr = map['address']?.toString().trim() ?? '';
+
+      if (empId.isEmpty || ts.isEmpty || type.isEmpty) continue;
+      final sig = '${empId}_${ts}_$type';
+
+      if (!existingSignatures.contains(sig)) {
+        existingSignatures.add(sig);
+        eventsList.add(jsonEncode({
+          'timestamp': ts,
+          'employeeId': empId,
+          'type': type,
+          if (addr.isNotEmpty) 'address': addr,
+        }));
+        addedAny = true;
+      }
+    }
+
+    if (addedAny) {
+      await prefs.setStringList(keyEvents, eventsList);
+    }
   }
 }

@@ -101,6 +101,55 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>?> fetchAttendanceHistory({
+    required String employeeId,
+    String? periode,
+  }) async {
+    try {
+      final body = jsonEncode({
+        'action': 'daftar_absen',
+        'employeeId': employeeId,
+        if (periode != null && periode.isNotEmpty) 'periode': periode,
+      });
+
+      final response = await client.post(
+        Uri.parse(scriptUrls[0]),
+        headers: {'Content-Type': 'text/plain'},
+        body: body,
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 302) {
+        try {
+          final Map<String, dynamic> data = jsonDecode(response.body);
+          if (data['status'] == 'success') {
+            return data;
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    // Fallback GET
+    try {
+      final queryParams = <String, String>{
+        'action': 'daftar_absen',
+        'employeeId': employeeId,
+      };
+      if (periode != null && periode.isNotEmpty) queryParams['periode'] = periode;
+      final uri = Uri.parse(scriptUrls[0]).replace(queryParameters: queryParams);
+      final response = await client.get(uri);
+      if (response.statusCode == 200 || response.statusCode == 302) {
+        try {
+          final Map<String, dynamic> data = jsonDecode(response.body);
+          if (data['status'] == 'success') {
+            return data;
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
   Future<bool> submitDailyReport(Map<String, dynamic> reportData) async {
     try {
       final body = jsonEncode(reportData);

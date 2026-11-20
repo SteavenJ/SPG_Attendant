@@ -10,6 +10,8 @@ import 'package:spg_attendant/services/storage_service.dart';
 import 'package:spg_attendant/widgets/attendance_graph.dart';
 import 'package:ntp/ntp.dart';
 
+enum AttendanceViewMode { mingguan, bulanan }
+
 class AttendanceScreen extends StatefulWidget {
   final ApiService apiService;
   final LocationService locationService;
@@ -39,11 +41,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   Map<String, String> _promotorNames = {};
   TodayAttendanceStatus _todayStatus = TodayAttendanceStatus.empty();
   WeeklyAttendanceSummary _weeklySummary = WeeklyAttendanceSummary.empty();
+  MonthlyAttendanceSummary _monthlySummary = MonthlyAttendanceSummary.empty();
   bool _showWeeklyBreakdown = false;
+  AttendanceViewMode _viewMode = AttendanceViewMode.mingguan;
+  String _selectedMonthPeriod = DateFormat('yyyy-MM').format(DateTime.now());
+  List<String> _availableMonthPeriods = [];
+  String _monthlyFilterStatus = 'all'; // 'all', 'hadir', 'libur'
 
   @override
   void initState() {
     super.initState();
+    _initMonthPeriods();
     _syncNetworkTime();
     _updateTime();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -52,6 +60,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     _fetchLocation();
     _fetchPromotors();
     _loadSavedEmployeeId();
+  }
+
+  void _initMonthPeriods() {
+    final now = DateTime.now();
+    final List<String> periods = [];
+    for (int i = 0; i < 12; i++) {
+      final d = DateTime(now.year, now.month - i, 1);
+      periods.add(DateFormat('yyyy-MM').format(d));
+    }
+    _availableMonthPeriods = periods;
+    _selectedMonthPeriod = DateFormat('yyyy-MM').format(now);
   }
 
   Future<void> _loadSavedEmployeeId() async {
@@ -119,6 +138,19 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       'Clock In': 'Masuk',
       'Clock Out': 'Keluar',
       'Weekly Summary': 'Ringkasan Mingguan',
+      'Monthly Summary': 'Rekap Bulanan',
+      'Weekly View': 'Mingguan',
+      'Monthly View': 'Bulanan',
+      'Monthly Attendance Summary': 'Rekap Kehadiran Bulanan',
+      'Total Monthly Hours': 'Total Jam Bulan Ini',
+      'Attendance Rate': 'Tingkat Kehadiran',
+      'Working Days': 'Hari Kerja',
+      'All Days': 'Semua Hari',
+      'Attended Days': 'Hadir',
+      'Days Off / Absent': 'Libur / Tidak Hadir',
+      'Select Month': 'Pilih Bulan',
+      'Monthly Working Target': 'Pencapaian Hari Kerja Bulan Ini',
+      'No data for this filter.': 'Tidak ada data untuk filter ini.',
       'Please enter an Employee ID': 'Harap masukkan ID Karyawan',
       'Attendance recorded!': 'Kehadiran dicatat!',
       'Failed to record attendance': 'Gagal mencatat kehadiran',
@@ -147,6 +179,24 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return dict[key] ?? key;
   }
 
+  String _formatMonthLabel(String period, bool isIndo) {
+    try {
+      final parts = period.split('-');
+      if (parts.length == 2) {
+        final y = int.parse(parts[0]);
+        final m = int.parse(parts[1]);
+        if (isIndo) {
+          const mNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+          return '${mNames[m]} $y';
+        } else {
+          const mNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+          return '${mNames[m]} $y';
+        }
+      }
+    } catch (_) {}
+    return period;
+  }
+
   Future<void> _fetchLocation() async {
     final address = await widget.locationService.getCurrentAddress();
     if (mounted) {
@@ -156,13 +206,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
-  Future<void> _onEmployeeIdChanged() async {
+  Future<void> _onEmployeeIdChanged({bool reloadServer = true}) async {
     final empId = _employeeIdController.text.trim();
     if (empId.isNotEmpty) {
       await widget.storageService.setSavedEmployeeId(empId);
     }
     final todayStatus = await widget.storageService.getTodayAttendanceStatus(empId);
     final weeklySummary = await widget.storageService.getWeeklyAttendanceSummary(empId);
+    final monthlySummary = await widget.storageService.getMonthlyAttendanceSummary(
+      empId,
+      targetMonth: _selectedMonthPeriod,
+    );
     
     if (mounted) {
       setState(() {
@@ -170,7 +224,55 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         _todayStatus = todayStatus;
         _weeklySummary = weeklySummary;
         _weeklyHours = weeklySummary.hoursPerDay;
+        _monthlySummary = monthlySummary;
       });
+    }
+
+    if (reloadServer && empId.isNotEmpty) {
+      _fetchServerAttendanceHistory(empId);
+    }
+  }
+
+  Future<void> _fetchServerAttendanceHistory(String empId) async {
+    try {
+      final serverData = await widget.apiService.fetchAttendanceHistory(
+        employeeId: empId,
+        periode: _selectedMonthPeriod,
+      );
+      if (serverData != null && serverData['status'] == 'success' && serverData['data'] is List) {
+        await widget.storageService.mergeExternalAttendanceEvents(serverData['data'] as List<dynamic>);
+        final updatedWeekly = await widget.storageService.getWeeklyAttendanceSummary(empId);
+        final updatedMonthly = await widget.storageService.getMonthlyAttendanceSummary(
+          empId,
+          targetMonth: _selectedMonthPeriod,
+        );
+        if (mounted) {
+          setState(() {
+            _weeklySummary = updatedWeekly;
+            _weeklyHours = updatedWeekly.hoursPerDay;
+            _monthlySummary = updatedMonthly;
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  void _onMonthPeriodChanged(String newPeriod) async {
+    setState(() {
+      _selectedMonthPeriod = newPeriod;
+    });
+    final empId = _employeeIdController.text.trim();
+    final summary = await widget.storageService.getMonthlyAttendanceSummary(
+      empId,
+      targetMonth: newPeriod,
+    );
+    if (mounted) {
+      setState(() {
+        _monthlySummary = summary;
+      });
+    }
+    if (empId.isNotEmpty) {
+      _fetchServerAttendanceHistory(empId);
     }
   }
 
@@ -296,9 +398,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               const SizedBox(height: 24),
               
               _buildTodayShiftCard(cardColor, textColor, subTextColor).animate().fade(delay: 550.ms).slideY(begin: 0.1),
-              const SizedBox(height: 32),
+              const SizedBox(height: 28),
+
+              // Segmented Toggle: Mingguan vs Bulanan
+              _buildViewModeToggle(cardColor, textColor, subTextColor).animate().fade(delay: 580.ms),
+              const SizedBox(height: 20),
+
+              if (_viewMode == AttendanceViewMode.mingguan)
+                _buildWeeklySummarySection(cardColor, textColor, subTextColor).animate().fade(delay: 600.ms).slideY(begin: 0.1)
+              else
+                _buildMonthlySummarySection(cardColor, textColor, subTextColor).animate().fade(delay: 600.ms).slideY(begin: 0.1),
               
-              _buildWeeklySummarySection(cardColor, textColor, subTextColor).animate().fade(delay: 600.ms).slideY(begin: 0.1),
               const SizedBox(height: 40),
             ],
           ),
@@ -1158,6 +1268,400 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 isIndo: isIndo,
               )),
         ],
+      ],
+    );
+  }
+
+  Widget _buildViewModeToggle(Color cardColor, Color textColor, Color subTextColor) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                if (_viewMode != AttendanceViewMode.mingguan) {
+                  setState(() {
+                    _viewMode = AttendanceViewMode.mingguan;
+                  });
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: _viewMode == AttendanceViewMode.mingguan
+                      ? cardColor
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(11),
+                  boxShadow: _viewMode == AttendanceViewMode.mingguan
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.view_week_rounded,
+                      size: 16,
+                      color: _viewMode == AttendanceViewMode.mingguan
+                          ? primaryColor
+                          : subTextColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _t('Weekly View'),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: _viewMode == AttendanceViewMode.mingguan
+                            ? FontWeight.bold
+                            : FontWeight.w600,
+                        color: _viewMode == AttendanceViewMode.mingguan
+                            ? textColor
+                            : subTextColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                if (_viewMode != AttendanceViewMode.bulanan) {
+                  setState(() {
+                    _viewMode = AttendanceViewMode.bulanan;
+                  });
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: _viewMode == AttendanceViewMode.bulanan
+                      ? cardColor
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(11),
+                  boxShadow: _viewMode == AttendanceViewMode.bulanan
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.calendar_month_rounded,
+                      size: 16,
+                      color: _viewMode == AttendanceViewMode.bulanan
+                          ? primaryColor
+                          : subTextColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _t('Monthly View'),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: _viewMode == AttendanceViewMode.bulanan
+                            ? FontWeight.bold
+                            : FontWeight.w600,
+                        color: _viewMode == AttendanceViewMode.bulanan
+                            ? textColor
+                            : subTextColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMonthlyFilterChip({
+    required String label,
+    required String filterKey,
+    required bool isDark,
+  }) {
+    final bool isSelected = _monthlyFilterStatus == filterKey;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _monthlyFilterStatus = filterKey;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? primaryColor.withValues(alpha: isDark ? 0.25 : 0.15)
+              : (isDark ? const Color(0xFF0F172A) : Colors.grey.shade100),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected
+                ? primaryColor
+                : (isDark ? Colors.white10 : Colors.grey.shade300),
+            width: isSelected ? 1.4 : 1.0,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+            color: isSelected
+                ? primaryColor
+                : (isDark ? Colors.grey.shade300 : Colors.grey.shade700),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMonthlySummarySection(Color cardColor, Color textColor, Color subTextColor) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    bool isIndo = MyApp.of(context)?.isIndonesian ?? false;
+
+    List<DailyAttendanceLog> filteredLogs = _monthlySummary.dailyLogs;
+    if (_monthlyFilterStatus == 'hadir') {
+      filteredLogs = filteredLogs.where((l) => l.hours > 0 || l.clockInTime != null).toList();
+    } else if (_monthlyFilterStatus == 'libur') {
+      filteredLogs = filteredLogs.where((l) => l.hours == 0 && l.clockInTime == null).toList();
+    }
+    // Tampilkan hari terbaru di posisi teratas
+    final displayLogs = filteredLogs.reversed.toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header & Month Selector
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.calendar_month_rounded,
+                    size: 22,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      _t('Monthly Summary'),
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: textColor),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+              decoration: BoxDecoration(
+                color: cardColor,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: isDark ? Colors.white12 : Colors.grey.shade300),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _selectedMonthPeriod,
+                  icon: const Icon(Icons.arrow_drop_down, size: 20),
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: textColor),
+                  dropdownColor: cardColor,
+                  onChanged: (val) {
+                    if (val != null) _onMonthPeriodChanged(val);
+                  },
+                  items: _availableMonthPeriods.map((period) {
+                    return DropdownMenuItem<String>(
+                      value: period,
+                      child: Text(_formatMonthLabel(period, isIndo)),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+
+        // 4 METRIKS MINI CARDS (2x2)
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricMiniCard(
+                cardColor: cardColor,
+                textColor: textColor,
+                subTextColor: subTextColor,
+                icon: Icons.timer_outlined,
+                accentColor: const Color(0xFF2563EB),
+                title: _t('Total Monthly Hours'),
+                value: '${_monthlySummary.totalHours} ${_t('Hours')}',
+                isDark: isDark,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildMetricMiniCard(
+                cardColor: cardColor,
+                textColor: textColor,
+                subTextColor: subTextColor,
+                icon: Icons.event_available_outlined,
+                accentColor: const Color(0xFF10B981),
+                title: _t('Days Present'),
+                value: '${_monthlySummary.daysPresent} / ${_monthlySummary.standardWorkingDays} ${_t('Days')}',
+                isDark: isDark,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricMiniCard(
+                cardColor: cardColor,
+                textColor: textColor,
+                subTextColor: subTextColor,
+                icon: Icons.pie_chart_outline_rounded,
+                accentColor: const Color(0xFFF59E0B),
+                title: _t('Attendance Rate'),
+                value: '${_monthlySummary.attendancePercentage}%',
+                isDark: isDark,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildMetricMiniCard(
+                cardColor: cardColor,
+                textColor: textColor,
+                subTextColor: subTextColor,
+                icon: Icons.speed_outlined,
+                accentColor: const Color(0xFF8B5CF6),
+                title: _t('Daily Average'),
+                value: '${_monthlySummary.avgHoursPerDay}h',
+                isDark: isDark,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+
+        // TARGET HARI KERJA PROGRESS BAR
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _t('Monthly Working Target'),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: subTextColor),
+                  ),
+                  Text(
+                    '${_monthlySummary.daysPresent} / ${_monthlySummary.standardWorkingDays} ${_t('Days')}',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textColor),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: LinearProgressIndicator(
+                  value: (_monthlySummary.daysPresent / (_monthlySummary.standardWorkingDays > 0 ? _monthlySummary.standardWorkingDays : 1)).clamp(0.0, 1.0),
+                  minHeight: 7,
+                  backgroundColor: isDark ? const Color(0xFF334155) : Colors.grey.shade200,
+                  valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF10B981)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // FILTER CHIPS ROW
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: Row(
+            children: [
+              _buildMonthlyFilterChip(
+                label: '${_t('All Days')} (${_monthlySummary.totalDaysInMonth})',
+                filterKey: 'all',
+                isDark: isDark,
+              ),
+              const SizedBox(width: 8),
+              _buildMonthlyFilterChip(
+                label: '${_t('Attended Days')} (${_monthlySummary.daysPresent})',
+                filterKey: 'hadir',
+                isDark: isDark,
+              ),
+              const SizedBox(width: 8),
+              _buildMonthlyFilterChip(
+                label: '${_t('Days Off / Absent')} (${_monthlySummary.totalDaysInMonth - _monthlySummary.daysPresent})',
+                filterKey: 'libur',
+                isDark: isDark,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // DAFTAR LOG HARIAN BULANAN
+        if (displayLogs.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: cardColor,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade200),
+            ),
+            child: Center(
+              child: Text(
+                _t('No data for this filter.'),
+                style: TextStyle(fontSize: 13, color: subTextColor),
+              ),
+            ),
+          )
+        else
+          ...displayLogs.map((log) => _buildDailyLogCard(
+                log: log,
+                cardColor: cardColor,
+                textColor: textColor,
+                subTextColor: subTextColor,
+                isDark: isDark,
+                isIndo: isIndo,
+              )),
       ],
     );
   }
