@@ -23,14 +23,44 @@ void main() {
     when(() => mockLocationService.getCurrentAddress())
         .thenAnswer((_) async => '123 Fake St (Lat: 0.0, Lng: 0.0)');
     
+    when(() => mockApiService.fetchPromotorNames(forceRefresh: any(named: 'forceRefresh')))
+        .thenAnswer((_) async => {'123': 'Test Employee'});
+
+    when(() => mockApiService.fetchAttendanceHistory(
+          employeeId: any(named: 'employeeId'),
+          periode: any(named: 'periode'),
+        )).thenAnswer((_) async => {'status': 'success', 'data': []});
+
+    when(() => mockStorageService.getSavedEmployeeId())
+        .thenAnswer((_) async => null);
+
+    when(() => mockStorageService.setSavedEmployeeId(any()))
+        .thenAnswer((_) async {});
+
+    when(() => mockStorageService.getTodayAttendanceStatus(any()))
+        .thenAnswer((_) async => TodayAttendanceStatus.empty());
+
+    when(() => mockStorageService.getWeeklyAttendanceSummary(any()))
+        .thenAnswer((_) async => WeeklyAttendanceSummary.empty());
+
+    when(() => mockStorageService.getMonthlyAttendanceSummary(any(), targetMonth: any(named: 'targetMonth')))
+        .thenAnswer((_) async => MonthlyAttendanceSummary.empty());
+
+    when(() => mockStorageService.mergeExternalAttendanceEvents(any()))
+        .thenAnswer((_) async {});
+
     when(() => mockStorageService.getWeeklyHours(any()))
         .thenAnswer((_) async => {1: 8.0, 2: 8.0});
 
     when(() => mockStorageService.getClockStateToday(any()))
         .thenAnswer((_) async => 'Clock In');
 
-    when(() => mockStorageService.saveEvent(any(), any(), any()))
-        .thenAnswer((_) async {});
+    when(() => mockStorageService.saveEvent(
+          any(),
+          any(),
+          any(),
+          address: any(named: 'address'),
+        )).thenAnswer((_) async {});
   });
 
   Widget createWidgetUnderTest() {
@@ -68,7 +98,7 @@ void main() {
     await tester.pumpWidget(createWidgetUnderTest());
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField), 'EMP-123');
+    await tester.enterText(find.byType(TextField), '123');
     await tester.pumpAndSettle();
 
     await tester.ensureVisible(find.text('CLOCK IN'));
@@ -80,12 +110,17 @@ void main() {
 
     verify(() => mockApiService.recordAttendance(
       timestamp: any(named: 'timestamp'),
-      employeeId: 'EMP-123',
+      employeeId: '123',
       type: 'Clock In',
       address: '123 Fake St (Lat: 0.0, Lng: 0.0)',
     )).called(1);
     
-    verify(() => mockStorageService.saveEvent(any(), 'EMP-123', 'Clock In')).called(1);
+    verify(() => mockStorageService.saveEvent(
+      any(),
+      '123',
+      'Clock In',
+      address: any(named: 'address'),
+    )).called(1);
 
     expect(find.text('Attendance recorded!'), findsOneWidget);
   });
