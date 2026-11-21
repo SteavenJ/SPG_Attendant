@@ -222,10 +222,12 @@ class StorageService {
   // Save the remembered employee ID
   Future<void> setSavedEmployeeId(String id) async {
     final prefs = await SharedPreferences.getInstance();
-    if (id.trim().isEmpty) {
+    final trimmed = id.trim();
+    // Jangan pernah simpan ID 101 (Admin) secara permanen di storage
+    if (trimmed.isEmpty || trimmed == '101') {
       await prefs.remove(keySavedEmployeeId);
     } else {
-      await prefs.setString(keySavedEmployeeId, id.trim());
+      await prefs.setString(keySavedEmployeeId, trimmed);
     }
   }
 

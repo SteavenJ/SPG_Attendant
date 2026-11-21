@@ -80,6 +80,12 @@ class _ReportScreenState extends State<ReportScreen>
   bool _isLoadingNames = true;
   bool _isSubmitting = false;
 
+  // Admin PIN Auth (Khusus ID 101)
+  static const String _adminPin = '3838';
+  bool _isAdminAuthenticated = false;
+  String _lastConfirmedId = '';
+  bool _isPromptingPin = false;
+
   // Navigasi Utama Sidebar: Penjualan atau Pencapaian Toko
   MainView _currentView = MainView.penjualan;
 
@@ -170,7 +176,13 @@ class _ReportScreenState extends State<ReportScreen>
   Future<void> _loadInitialData() async {
     final savedId = await widget.storageService.getSavedEmployeeId();
     if (savedId != null && savedId.isNotEmpty && mounted) {
-      _idController.text = savedId;
+      if (savedId == '101') {
+        // Jangan auto-load ID 101 dari storage tanpa otentikasi PIN
+        await widget.storageService.clearSavedEmployeeId();
+      } else {
+        _lastConfirmedId = savedId;
+        _idController.text = savedId;
+      }
     }
     await _loadPromotorNames();
     _loadPencapaian();
@@ -281,10 +293,19 @@ class _ReportScreenState extends State<ReportScreen>
     }
 
     final empId = _idController.text.trim();
+    if (empId == '101' && !_isAdminAuthenticated) {
+      if (mounted) {
+        setState(() {
+          _isLoadingPencapaian = false;
+        });
+      }
+      return;
+    }
+
     final now = DateTime.now();
     final currentMonth = DateFormat('yyyy-MM').format(now);
     final prevMonth = DateFormat('yyyy-MM').format(DateTime(now.year, now.month - 1, 1));
-    final bool isAdmin = empId == '101';
+    final bool isAdmin = empId == '101' && _isAdminAuthenticated;
 
     final pencapaianFuture = widget.apiService.fetchPencapaian(empId);
     final prevPencapaianFuture = widget.apiService.fetchPencapaian(empId, periode: prevMonth);
@@ -378,7 +399,7 @@ class _ReportScreenState extends State<ReportScreen>
 
   Future<void> _loadSalesHistory({bool showSpinner = true}) async {
     final empId = _idController.text.trim();
-    if (empId.isEmpty) {
+    if (empId.isEmpty || (empId == '101' && !_isAdminAuthenticated)) {
       if (mounted) {
         setState(() {
           _rawSalesHistory = [];
@@ -386,7 +407,10 @@ class _ReportScreenState extends State<ReportScreen>
           _historyTotalAmount = 0;
           _historyTotalTransactions = 0;
           _historyFilteredProductUnits = 0;
-          _historyError = 'Silakan masukkan ID terlebih dahulu di form Penjualan.';
+          _isLoadingHistory = false;
+          _historyError = empId.isEmpty
+              ? 'Silakan masukkan ID terlebih dahulu di form Penjualan.'
+              : 'Verifikasi PIN Admin diperlukan untuk mengakses data ini.';
         });
       }
       return;
@@ -469,7 +493,7 @@ class _ReportScreenState extends State<ReportScreen>
           }
 
           _rawSalesHistory = filteredList;
-          _isAdminHistory = data['isAdmin'] == true || empId == '101';
+          _isAdminHistory = (data['isAdmin'] == true || empId == '101') && _isAdminAuthenticated;
           final nowDt = DateTime.now();
           final prevMonth = DateFormat('yyyy-MM').format(DateTime(nowDt.year, nowDt.month - 1, 1));
           if ((_selectedFilterStore == null || _selectedFilterStore!.isEmpty) &&
@@ -690,11 +714,30 @@ class _ReportScreenState extends State<ReportScreen>
 
   void _onIdChanged() {
     final id = _idController.text.trim();
-    if (id.isNotEmpty) {
-      widget.storageService.setSavedEmployeeId(id);
+
+    if (id != '101') {
+      _isAdminAuthenticated = false;
+      _lastConfirmedId = id;
+      if (id.isNotEmpty) {
+        widget.storageService.setSavedEmployeeId(id);
+      }
+    } else {
+      // ID adalah 101 (Admin) - Jangan simpan ke storage dan minta PIN
+      if (!_isAdminAuthenticated) {
+        _debounceTimer?.cancel();
+        if (!_isPromptingPin) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _promptAdminPin();
+          });
+        }
+        return;
+      }
     }
+
     if (_promotorNames.containsKey(id)) {
       _nameController.text = _promotorNames[id]!;
+    } else if (id == '101' && _isAdminAuthenticated) {
+      _nameController.text = 'Administrator';
     } else {
       _nameController.text = '';
     }
@@ -708,6 +751,53 @@ class _ReportScreenState extends State<ReportScreen>
         }
       }
     });
+  }
+
+  Future<void> _promptAdminPin() async {
+    if (_isPromptingPin || !mounted) return;
+    _isPromptingPin = true;
+
+    _debounceTimer?.cancel();
+
+    final bool? verified = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const _AdminPinDialog(correctPin: _adminPin),
+    );
+
+    _isPromptingPin = false;
+
+    if (!mounted) return;
+
+    if (verified == true) {
+      setState(() {
+        _isAdminAuthenticated = true;
+        _lastConfirmedId = '101';
+        _nameController.text = 'Administrator';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Akses Administrator Terverifikasi (Mode Admin Aktif)'),
+          backgroundColor: Color(0xFF10B981),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      _loadPencapaian(showSpinner: true);
+      if (_currentView == MainView.penjualan && _tabController.index == 1) {
+        _loadSalesHistory(showSpinner: true);
+      }
+    } else {
+      setState(() {
+        _isAdminAuthenticated = false;
+        final fallback = _lastConfirmedId == '101' ? '' : _lastConfirmedId;
+        _idController.text = fallback;
+        if (_promotorNames.containsKey(fallback)) {
+          _nameController.text = _promotorNames[fallback]!;
+        } else {
+          _nameController.text = '';
+        }
+      });
+    }
   }
 
   @override
@@ -2470,7 +2560,7 @@ class _ReportScreenState extends State<ReportScreen>
     }
 
     final empId = _idController.text.trim();
-    final bool isAdmin = empId == '101' || _pencapaianData?['isAdmin'] == true;
+    final bool isAdmin = (empId == '101' && _isAdminAuthenticated) || _pencapaianData?['isAdmin'] == true;
     Map<String, dynamic>? personal = _pencapaianData?['personal'] != null
         ? Map<String, dynamic>.from(_pencapaianData!['personal'] as Map)
         : null;
@@ -3081,7 +3171,7 @@ class _ReportScreenState extends State<ReportScreen>
 
   bool _canEditTransaction(Map<String, dynamic> item) {
     final empId = _idController.text.trim();
-    final bool isAdmin = empId == '101' || _isAdminHistory;
+    final bool isAdmin = (empId == '101' && _isAdminAuthenticated) || _isAdminHistory;
     if (isAdmin) return true; // Admin memiliki hak akses penuh
 
     try {
@@ -3126,7 +3216,7 @@ class _ReportScreenState extends State<ReportScreen>
         (item['editedLabel']?.toString().trim().isNotEmpty ?? false);
     final canEdit = _canEditTransaction(item);
     final empId = _idController.text.trim();
-    final bool isAdmin = empId == '101' || _isAdminHistory;
+    final bool isAdmin = (empId == '101' && _isAdminAuthenticated) || _isAdminHistory;
 
     showModalBottomSheet(
       context: context,
@@ -3559,7 +3649,7 @@ class _ReportScreenState extends State<ReportScreen>
     final editedLabel = item['editedLabel']?.toString().trim() ?? '';
     final canEdit = _canEditTransaction(item);
     final empId = _idController.text.trim();
-    final bool isAdmin = empId == '101' || _isAdminHistory;
+    final bool isAdmin = (empId == '101' && _isAdminAuthenticated) || _isAdminHistory;
 
     showModalBottomSheet(
       context: context,
@@ -4273,10 +4363,10 @@ class _ReportScreenState extends State<ReportScreen>
 
   Widget _buildSidebar() {
     final empId = _idController.text.trim();
+    final isAdmin = empId == '101' && _isAdminAuthenticated;
     final name = _nameController.text.trim().isNotEmpty
         ? _nameController.text.trim()
-        : (empId == '101' ? 'ADMINISTRATOR' : 'SPG Attendant');
-    final isAdmin = empId == '101';
+        : (isAdmin ? 'ADMINISTRATOR' : 'SPG Attendant');
 
     return Drawer(
       child: Column(
@@ -4387,6 +4477,30 @@ class _ReportScreenState extends State<ReportScreen>
               _loadPencapaian();
             },
           ),
+          if (isAdmin) ...[
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.lock_reset_rounded, color: Colors.amber),
+              title: const Text('Kunci / Keluar Mode Admin', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.amber)),
+              subtitle: const Text('Kunci kembali akses monitoring admin', style: TextStyle(fontSize: 12)),
+              onTap: () {
+                Navigator.pop(context);
+                setState(() {
+                  _isAdminAuthenticated = false;
+                  _idController.clear();
+                  _nameController.clear();
+                  _lastConfirmedId = '';
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Anda telah keluar dari Mode Administrator.'),
+                    backgroundColor: Colors.amber,
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+            ),
+          ],
           const Spacer(),
           Padding(
             padding: const EdgeInsets.all(16.0),
@@ -5494,6 +5608,246 @@ class _ReportScreenState extends State<ReportScreen>
               ],
             )
           : _buildPencapaianTab(),
+    );
+  }
+}
+
+class _AdminPinDialog extends StatefulWidget {
+  final String correctPin;
+
+  const _AdminPinDialog({super.key, required this.correctPin});
+
+  @override
+  State<_AdminPinDialog> createState() => _AdminPinDialogState();
+}
+
+class _AdminPinDialogState extends State<_AdminPinDialog> {
+  final TextEditingController _pinController = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+  bool _obscureText = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pinController.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _verifyPin() {
+    final input = _pinController.text.trim();
+    if (input == widget.correctPin) {
+      Navigator.of(context).pop(true);
+    } else {
+      setState(() {
+        _errorMessage = 'PIN Admin salah! Silakan coba lagi.';
+      });
+      _pinController.clear();
+      _focusNode.requestFocus();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1E293B);
+    final subTextColor = isDark ? Colors.grey.shade400 : Colors.grey.shade600;
+
+    return Dialog(
+      backgroundColor: cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      elevation: 10,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 400),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF59E0B).withValues(alpha: isDark ? 0.2 : 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.admin_panel_settings_rounded,
+                size: 42,
+                color: Color(0xFFF59E0B),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Verifikasi Akses Admin',
+              style: TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.bold,
+                color: textColor,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'ID 101 memiliki hak akses Administrator (Monitoring Seluruh Toko). Masukkan 4 digit PIN Admin untuk melanjutkan.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: subTextColor,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 24),
+            TextField(
+              controller: _pinController,
+              focusNode: _focusNode,
+              keyboardType: TextInputType.number,
+              obscureText: _obscureText,
+              textAlign: TextAlign.center,
+              maxLength: 4,
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 16,
+                color: textColor,
+              ),
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: InputDecoration(
+                counterText: '',
+                hintText: '••••',
+                hintStyle: TextStyle(
+                  fontSize: 24,
+                  letterSpacing: 12,
+                  color: isDark ? Colors.grey.shade600 : Colors.grey.shade300,
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                filled: true,
+                fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(
+                    color: _errorMessage != null ? Colors.redAccent : Colors.transparent,
+                    width: 1.5,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(
+                    color: _errorMessage != null
+                        ? Colors.redAccent
+                        : (isDark ? Colors.white12 : Colors.grey.shade300),
+                    width: 1.5,
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(
+                    color: _errorMessage != null
+                        ? Colors.redAccent
+                        : Theme.of(context).colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureText ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                    color: subTextColor,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _obscureText = !_obscureText;
+                    });
+                  },
+                ),
+              ),
+              onChanged: (val) {
+                if (_errorMessage != null) {
+                  setState(() {
+                    _errorMessage = null;
+                  });
+                }
+                if (val.length == 4) {
+                  _verifyPin();
+                }
+              },
+              onSubmitted: (_) => _verifyPin(),
+            ),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 16, color: Colors.redAccent),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      _errorMessage!,
+                      style: const TextStyle(
+                        color: Colors.redAccent,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      side: BorderSide(
+                        color: isDark ? Colors.white24 : Colors.grey.shade300,
+                      ),
+                    ),
+                    child: Text(
+                      'Batal',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: subTextColor,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _verifyPin,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      'Masuk',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

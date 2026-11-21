@@ -32,4 +32,22 @@ void main() {
     final weeklyHoursEmp2 = await storageService.getWeeklyHours('EMP2');
     expect(weeklyHoursEmp2[today.weekday], 0);
   });
+
+  test('setSavedEmployeeId never stores ID 101 to prevent persistent admin access', () async {
+    final storageService = StorageService();
+
+    // Normal SPG ID should be saved
+    await storageService.setSavedEmployeeId('17');
+    expect(await storageService.getSavedEmployeeId(), '17');
+
+    // ID 101 (Admin) must be removed / rejected from storage
+    await storageService.setSavedEmployeeId('101');
+    expect(await storageService.getSavedEmployeeId(), isNull);
+
+    // Whitespace ' 101 ' also rejected
+    await storageService.setSavedEmployeeId('17');
+    expect(await storageService.getSavedEmployeeId(), '17');
+    await storageService.setSavedEmployeeId(' 101 ');
+    expect(await storageService.getSavedEmployeeId(), isNull);
+  });
 }
