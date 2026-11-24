@@ -1166,6 +1166,7 @@ class _ReportScreenState extends State<ReportScreen>
     required int prevCount,
     required Color accentColor,
     required bool isDark,
+    String? incentiveBadge,
   }) {
     final innerCardBg = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
 
@@ -1215,10 +1216,37 @@ class _ReportScreenState extends State<ReportScreen>
             child: Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                child: _buildUnitWithTrend(
-                  count: count,
-                  prevCount: prevCount,
-                  accentColor: accentColor,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildUnitWithTrend(
+                      count: count,
+                      prevCount: prevCount,
+                      accentColor: accentColor,
+                    ),
+                    if (incentiveBadge != null) ...[
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981).withValues(alpha: isDark ? 0.2 : 0.12),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.35),
+                            width: 0.8,
+                          ),
+                        ),
+                        child: Text(
+                          incentiveBadge,
+                          style: const TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF10B981),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -1234,6 +1262,7 @@ class _ReportScreenState extends State<ReportScreen>
     required int prevCount,
     required Color accentColor,
     required bool isDark,
+    String? incentiveBadge,
   }) {
     return Expanded(
       child: Padding(
@@ -1256,6 +1285,28 @@ class _ReportScreenState extends State<ReportScreen>
               prevCount: prevCount,
               accentColor: accentColor,
             ),
+            if (incentiveBadge != null) ...[
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: isDark ? 0.2 : 0.12),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.35),
+                    width: 0.8,
+                  ),
+                ),
+                child: Text(
+                  incentiveBadge,
+                  style: const TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF10B981),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -1322,6 +1373,7 @@ class _ReportScreenState extends State<ReportScreen>
                   prevCount: prevOsCount,
                   accentColor: accentColor,
                   isDark: isDark,
+                  incentiveBadge: '+25rb/pcs',
                 ),
                 Container(
                   width: 1,
@@ -1333,6 +1385,7 @@ class _ReportScreenState extends State<ReportScreen>
                   prevCount: prevNhCount,
                   accentColor: accentColor,
                   isDark: isDark,
+                  incentiveBadge: '+50rb/pcs',
                 ),
               ],
             ),
@@ -1486,6 +1539,7 @@ class _ReportScreenState extends State<ReportScreen>
                                 prevCount: prevSofa,
                                 accentColor: const Color(0xFF3B82F6),
                                 isDark: isDark,
+                                incentiveBadge: '+85rb/pcs',
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -1534,6 +1588,7 @@ class _ReportScreenState extends State<ReportScreen>
                                     prevCount: prevSofa,
                                     accentColor: const Color(0xFF3B82F6),
                                     isDark: isDark,
+                                    incentiveBadge: '+85rb/pcs',
                                   ),
                                 ),
                                 const SizedBox(width: 8),
@@ -1557,72 +1612,101 @@ class _ReportScreenState extends State<ReportScreen>
 
                 const SizedBox(height: 12),
 
-                // Footer Ringkasan Total Unit beserta Tren Naik/Turun
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2563EB).withValues(alpha: isDark ? 0.14 : 0.06),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0xFF3B82F6).withValues(alpha: 0.25),
-                    ),
-                  ),
-                  child: Wrap(
-                    alignment: WrapAlignment.spaceBetween,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
+                // Footer Ringkasan Total Unit beserta Tren Naik/Turun & Total Insentif Qty
+                Builder(
+                  builder: (context) {
+                    final int qtyIncentiveTotal = (lawOs * _incentiveOsPerPcs) +
+                        (lawNh * _incentiveNhPerPcs) +
+                        (sofaCount * _incentiveSofaPerPcs);
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2563EB).withValues(alpha: isDark ? 0.14 : 0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFF3B82F6).withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 6,
                         children: [
-                          Icon(
-                            Icons.summarize_outlined,
-                            size: 17,
-                            color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.summarize_outlined,
+                                size: 17,
+                                color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Total Unit Terjual Bulan Ini:',
+                                style: TextStyle(
+                                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Total Unit Terjual Bulan Ini:',
-                            style: TextStyle(
-                              color: isDark ? Colors.white : const Color(0xFF1E293B),
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w600,
-                            ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildInlineTrendBadge(
+                                current: totalCount,
+                                previous: prevTotal,
+                                showPercentage: true,
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF3B82F6).withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: const Color(0xFF3B82F6).withValues(alpha: 0.4),
+                                  ),
+                                ),
+                                child: Text(
+                                  '$totalCount Unit',
+                                  style: const TextStyle(
+                                    color: Color(0xFF3B82F6),
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                              if (qtyIncentiveTotal > 0) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: const Color(0xFF10B981).withValues(alpha: 0.4),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'Insentif: ${_formatRp(qtyIncentiveTotal)}',
+                                    style: const TextStyle(
+                                      color: Color(0xFF10B981),
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ],
                       ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _buildInlineTrendBadge(
-                            current: totalCount,
-                            previous: prevTotal,
-                            showPercentage: true,
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: const Color(0xFF10B981).withValues(alpha: 0.4),
-                              ),
-                            ),
-                            child: Text(
-                              '$totalCount Unit',
-                              style: const TextStyle(
-                                color: Color(0xFF10B981),
-                                fontWeight: FontWeight.w800,
-                                fontSize: 15,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ],
             ),
