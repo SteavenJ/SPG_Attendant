@@ -149,6 +149,11 @@ class _ReportScreenState extends State<ReportScreen>
     {'minPct': 120.0, 'rate': 1.2, 'rangeLabel': '≥ 120%'},
   ];
 
+  // Insentif Quantity (Lawrence & Sofa)
+  static const int _incentiveOsPerPcs = 25000;
+  static const int _incentiveNhPerPcs = 50000;
+  static const int _incentiveSofaPerPcs = 85000;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -1670,10 +1675,17 @@ class _ReportScreenState extends State<ReportScreen>
         'empId': empId,
         'name': name,
         'txCount': 0,
+        'lawOs': 0,
+        'lawNh': 0,
+        'sofa': 0,
         'salesByStore': <String, int>{},
         'storeDisplay': <String, String>{},
       });
       entry['txCount'] = (entry['txCount'] as int) + 1;
+      entry['lawOs'] = (entry['lawOs'] as int) + ((itemMap['lawQtyOs'] as num?)?.toInt() ?? 0);
+      entry['lawNh'] = (entry['lawNh'] as int) + ((itemMap['lawQtyNh'] as num?)?.toInt() ?? 0);
+      entry['sofa'] = (entry['sofa'] as int) + ((itemMap['sofaQty'] as num?)?.toInt() ?? 0);
+
       final salesByStore = entry['salesByStore'] as Map<String, int>;
       final storeDisplay = entry['storeDisplay'] as Map<String, String>;
       salesByStore[tokoKey] = (salesByStore[tokoKey] ?? 0) + txTotal;
@@ -1688,7 +1700,7 @@ class _ReportScreenState extends State<ReportScreen>
       final storeDisplay = acc['storeDisplay'] as Map<String, String>;
 
       int totalSales = 0;
-      int totalIncentiveRp = 0;
+      int valueIncentiveRp = 0;
       String primaryStoreKey = '-';
       int maxStoreSales = -1;
 
@@ -1701,8 +1713,16 @@ class _ReportScreenState extends State<ReportScreen>
         final storeInfo = storeMap[storeEntry.key];
         final double pct = (storeInfo?['pct'] as double?) ?? 0.0;
         final double rate = _getIncentiveRate(pct);
-        totalIncentiveRp += (storeEntry.value * (rate / 100.0)).round();
+        valueIncentiveRp += (storeEntry.value * (rate / 100.0)).round();
       }
+
+      final int lawOs = (acc['lawOs'] as int?) ?? 0;
+      final int lawNh = (acc['lawNh'] as int?) ?? 0;
+      final int sofa = (acc['sofa'] as int?) ?? 0;
+      final int qtyIncentiveRp = (lawOs * _incentiveOsPerPcs) +
+          (lawNh * _incentiveNhPerPcs) +
+          (sofa * _incentiveSofaPerPcs);
+      final int totalIncentiveRp = valueIncentiveRp + qtyIncentiveRp;
 
       final primaryStoreInfo = storeMap[primaryStoreKey];
       final double primaryPct = (primaryStoreInfo?['pct'] as double?) ?? 0.0;
@@ -1719,12 +1739,18 @@ class _ReportScreenState extends State<ReportScreen>
         'salesAmount': totalSales,
         'storePct': primaryPct,
         'rate': primaryRate,
+        'valueIncentiveRp': valueIncentiveRp,
+        'qtyIncentiveRp': qtyIncentiveRp,
+        'totalIncentiveRp': totalIncentiveRp,
         'incentiveRp': totalIncentiveRp,
+        'lawOs': lawOs,
+        'lawNh': lawNh,
+        'sofa': sofa,
       });
     }
 
     rows.sort((a, b) {
-      final incCmp = (b['incentiveRp'] as int).compareTo(a['incentiveRp'] as int);
+      final incCmp = (b['totalIncentiveRp'] as int).compareTo(a['totalIncentiveRp'] as int);
       if (incCmp != 0) return incCmp;
       final salesCmp = (b['salesAmount'] as int).compareTo(a['salesAmount'] as int);
       if (salesCmp != 0) return salesCmp;
@@ -1786,6 +1812,75 @@ class _ReportScreenState extends State<ReportScreen>
     );
   }
 
+  Widget _buildQuantityIncentiveLegend({required bool isDark}) {
+    final items = [
+      {'label': 'Lawrence OS', 'rate': _formatRp(_incentiveOsPerPcs), 'unit': '/ pcs'},
+      {'label': 'Lawrence NH', 'rate': _formatRp(_incentiveNhPerPcs), 'unit': '/ pcs'},
+      {'label': 'Sofa', 'rate': _formatRp(_incentiveSofaPerPcs), 'unit': '/ pcs'},
+    ];
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: items.map((it) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isDark ? Colors.white12 : Colors.grey.shade300,
+              width: 1.0,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.inventory_2_outlined, size: 12, color: Colors.blue.shade400),
+              const SizedBox(width: 4),
+              Text(
+                '${it['label']} : ${it['rate']}${it['unit']}',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildMiniQtyBadge({
+    required String label,
+    required int count,
+    required bool isDark,
+    Color? color,
+  }) {
+    final badgeColor = color ?? (count > 0 ? const Color(0xFF3B82F6) : Colors.grey);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: badgeColor.withValues(alpha: isDark ? 0.2 : 0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: badgeColor.withValues(alpha: 0.3),
+          width: 0.8,
+        ),
+      ),
+      child: Text(
+        '$label: $count pcs',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: isDark && count == 0 ? Colors.grey.shade400 : badgeColor,
+        ),
+      ),
+    );
+  }
+
   Widget _buildIncentiveCard({
     required bool isDark,
     required bool isAdmin,
@@ -1800,9 +1895,15 @@ class _ReportScreenState extends State<ReportScreen>
         ? (storeActual / storeTarget) * 100.0
         : ((personal['percentage'] ?? personal['persentase'] ?? 0) as num).toDouble();
     final double personalRate = _getIncentiveRate(storePct);
-    final bool hasPositiveTier = isAdmin || personalRate > 0;
-    final Color borderAccent = hasPositiveTier ? const Color(0xFF10B981) : const Color(0xFF64748B);
-    final List<Color> headerColors = hasPositiveTier
+    final int lawOs = _monthlyQtySummary['lawOs'] ?? 0;
+    final int lawNh = _monthlyQtySummary['lawNh'] ?? 0;
+    final int sofa = _monthlyQtySummary['sofa'] ?? 0;
+    final int personalQtyIncentive = (lawOs * _incentiveOsPerPcs) +
+        (lawNh * _incentiveNhPerPcs) +
+        (sofa * _incentiveSofaPerPcs);
+    final bool hasPositiveIncentive = isAdmin || personalRate > 0 || personalQtyIncentive > 0;
+    final Color borderAccent = hasPositiveIncentive ? const Color(0xFF10B981) : const Color(0xFF64748B);
+    final List<Color> headerColors = hasPositiveIncentive
         ? (isDark
             ? [const Color(0xFF065F46), const Color(0xFF064E3B)]
             : [const Color(0xFF10B981), const Color(0xFF059669)])
@@ -1871,7 +1972,11 @@ class _ReportScreenState extends State<ReportScreen>
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    isAdmin ? currShort : 'Rate ${_formatIncentiveRate(personalRate)}',
+                    isAdmin
+                        ? currShort
+                        : (personalRate > 0
+                            ? 'Tier ${_formatIncentiveRate(personalRate)} + Qty'
+                            : (personalQtyIncentive > 0 ? 'Insentif Qty' : 'Tier 0%')),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 11,
@@ -1913,8 +2018,20 @@ class _ReportScreenState extends State<ReportScreen>
   }) {
     final int spgSalesAmount = _monthlyQtySummary['amount'] ?? 0;
     final int spgTxCount = _monthlyQtySummary['txCount'] ?? 0;
-    final int incentiveRp = (spgSalesAmount * (rate / 100.0)).round();
-    final Color accentColor = rate > 0 ? const Color(0xFF10B981) : const Color(0xFF64748B);
+    final int valueIncentiveRp = (spgSalesAmount * (rate / 100.0)).round();
+
+    final int lawOs = _monthlyQtySummary['lawOs'] ?? 0;
+    final int lawNh = _monthlyQtySummary['lawNh'] ?? 0;
+    final int sofa = _monthlyQtySummary['sofa'] ?? 0;
+    final int osIncentiveRp = lawOs * _incentiveOsPerPcs;
+    final int nhIncentiveRp = lawNh * _incentiveNhPerPcs;
+    final int sofaIncentiveRp = sofa * _incentiveSofaPerPcs;
+    final int qtyIncentiveRp = osIncentiveRp + nhIncentiveRp + sofaIncentiveRp;
+    final int totalIncentiveRp = valueIncentiveRp + qtyIncentiveRp;
+
+    final Color accentColor = (rate > 0 || qtyIncentiveRp > 0)
+        ? const Color(0xFF10B981)
+        : const Color(0xFF64748B);
     final Color innerBg = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
 
     // Cari target tier berikutnya sebagai panduan progres
@@ -1957,7 +2074,7 @@ class _ReportScreenState extends State<ReportScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Estimasi Insentif Diterima',
+                      'Estimasi Total Insentif Diterima',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -1966,11 +2083,11 @@ class _ReportScreenState extends State<ReportScreen>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _hasCurrentMonthHistory ? _formatRp(incentiveRp) : 'Rp -',
+                      _hasCurrentMonthHistory ? _formatRp(totalIncentiveRp) : 'Rp -',
                       style: TextStyle(
                         fontSize: 23,
                         fontWeight: FontWeight.w900,
-                        color: rate > 0
+                        color: (rate > 0 || qtyIncentiveRp > 0)
                             ? const Color(0xFF10B981)
                             : (isDark ? Colors.white : const Color(0xFF1E293B)),
                       ),
@@ -1978,7 +2095,7 @@ class _ReportScreenState extends State<ReportScreen>
                     const SizedBox(height: 4),
                     Text(
                       _hasCurrentMonthHistory
-                          ? '${_formatIncentiveRate(rate)} × ${_formatRp(spgSalesAmount)}'
+                          ? 'Value: ${_formatRp(valueIncentiveRp)} + Qty: ${_formatRp(qtyIncentiveRp)}'
                           : 'Memuat data omset penjualan Anda...',
                       style: TextStyle(
                         fontSize: 11.5,
@@ -1999,20 +2116,18 @@ class _ReportScreenState extends State<ReportScreen>
                 child: Column(
                   children: [
                     Text(
-                      'TIER',
+                      'TOTAL',
                       style: TextStyle(
                         fontSize: 9.5,
                         fontWeight: FontWeight.w700,
                         color: accentColor,
                       ),
                     ),
-                    Text(
-                      _formatIncentiveRate(rate),
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
-                        color: accentColor,
-                      ),
+                    const SizedBox(height: 1),
+                    Icon(
+                      Icons.account_balance_wallet_rounded,
+                      size: 20,
+                      color: accentColor,
                     ),
                   ],
                 ),
@@ -2022,83 +2137,181 @@ class _ReportScreenState extends State<ReportScreen>
         ),
         const SizedBox(height: 10),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Card 1: Insentif Value (Target Toko)
             Expanded(
               child: Container(
                 padding: const EdgeInsets.all(11),
                 decoration: BoxDecoration(
                   color: innerBg,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: isDark ? Colors.white12 : Colors.grey.shade200),
+                  border: Border.all(
+                    color: rate > 0
+                        ? const Color(0xFF10B981).withValues(alpha: 0.35)
+                        : (isDark ? Colors.white12 : Colors.grey.shade200),
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.trending_up_rounded,
+                          size: 14,
+                          color: rate > 0 ? const Color(0xFF10B981) : Colors.grey,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            'Insentif Value',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? Colors.grey.shade200 : const Color(0xFF1E293B),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
                     Text(
-                      'Pencapaian Toko',
+                      'Pencapaian Toko: ${storePct.toStringAsFixed(1)}%',
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 10.5,
                         color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
                       ),
                     ),
-                    const SizedBox(height: 3),
                     Text(
-                      '${storePct.toStringAsFixed(1)}%',
+                      'Rate: ${_formatIncentiveRate(rate)}',
                       style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: rate > 0
-                            ? const Color(0xFF10B981)
-                            : (isDark ? Colors.white : const Color(0xFF1E293B)),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        color: rate > 0 ? const Color(0xFF10B981) : Colors.grey,
                       ),
                     ),
                     Text(
-                      'Menentukan rate %',
+                      'Omset: ${_hasCurrentMonthHistory ? _formatRp(spgSalesAmount) : '-'} ($spgTxCount trx)',
                       style: TextStyle(
                         fontSize: 10,
-                        color: isDark ? Colors.grey.shade500 : Colors.grey.shade500,
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 6),
+                    Divider(height: 1, color: isDark ? Colors.white12 : Colors.grey.shade200),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Subtotal:',
+                          style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                        ),
+                        Text(
+                          _formatRp(valueIncentiveRp),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: rate > 0 ? const Color(0xFF10B981) : Colors.grey,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
             ),
             const SizedBox(width: 8),
+            // Card 2: Insentif Quantity (Lawrence & Sofa)
             Expanded(
               child: Container(
                 padding: const EdgeInsets.all(11),
                 decoration: BoxDecoration(
                   color: innerBg,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: isDark ? Colors.white12 : Colors.grey.shade200),
+                  border: Border.all(
+                    color: qtyIncentiveRp > 0
+                        ? const Color(0xFF3B82F6).withValues(alpha: 0.35)
+                        : (isDark ? Colors.white12 : Colors.grey.shade200),
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Penjualan Anda',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-                      ),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.inventory_2_outlined,
+                          size: 14,
+                          color: qtyIncentiveRp > 0 ? const Color(0xFF3B82F6) : Colors.grey,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            'Insentif Qty',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? Colors.grey.shade200 : const Color(0xFF1E293B),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 6),
                     Text(
-                      _hasCurrentMonthHistory ? _formatRp(spgSalesAmount) : '-',
+                      'OS: $lawOs pcs (${_formatRp(osIncentiveRp)})',
                       style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: isDark ? Colors.white : const Color(0xFF1E293B),
+                        fontSize: 10,
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      '$spgTxCount transaksi bulan ini',
+                      'NH: $lawNh pcs (${_formatRp(nhIncentiveRp)})',
                       style: TextStyle(
                         fontSize: 10,
-                        color: isDark ? Colors.grey.shade500 : Colors.grey.shade500,
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      'Sofa: $sofa pcs (${_formatRp(sofaIncentiveRp)})',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 6),
+                    Divider(height: 1, color: isDark ? Colors.white12 : Colors.grey.shade200),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Subtotal:',
+                          style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                        ),
+                        Text(
+                          _formatRp(qtyIncentiveRp),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: qtyIncentiveRp > 0 ? const Color(0xFF3B82F6) : Colors.grey,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -2158,9 +2371,9 @@ class _ReportScreenState extends State<ReportScreen>
             ],
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         Text(
-          'Skema Tier Insentif',
+          '1. Skema Insentif Value (Omset Toko)',
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w700,
@@ -2169,6 +2382,17 @@ class _ReportScreenState extends State<ReportScreen>
         ),
         const SizedBox(height: 6),
         _buildIncentiveTierLegend(activeRate: rate, isDark: isDark),
+        const SizedBox(height: 10),
+        Text(
+          '2. Skema Insentif Quantity (Lawrence & Sofa)',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        _buildQuantityIncentiveLegend(isDark: isDark),
       ],
     );
   }
@@ -2184,7 +2408,9 @@ class _ReportScreenState extends State<ReportScreen>
       leaderboardList: leaderboardList,
       periode: periode,
     );
-    final int totalIncentiveAll = rows.fold(0, (sum, r) => sum + (r['incentiveRp'] as int));
+    final int totalIncentiveAll = rows.fold(0, (sum, r) => sum + (r['totalIncentiveRp'] as int));
+    final int totalValueAll = rows.fold(0, (sum, r) => sum + (r['valueIncentiveRp'] as int));
+    final int totalQtyAll = rows.fold(0, (sum, r) => sum + (r['qtyIncentiveRp'] as int));
     final int totalSalesAll = rows.fold(0, (sum, r) => sum + (r['salesAmount'] as int));
     final int qualifiedCount = rows.where((r) => (r['rate'] as double) > 0).length;
     final Color innerBg = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
@@ -2227,7 +2453,7 @@ class _ReportScreenState extends State<ReportScreen>
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'Total Omset SPG: ${_formatRp(totalSalesAll)}',
+                    'Value: ${_formatRp(totalValueAll)} • Qty: ${_formatRp(totalQtyAll)} (Omset: ${_formatRp(totalSalesAll)})',
                     style: TextStyle(
                       fontSize: 11,
                       color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
@@ -2255,7 +2481,27 @@ class _ReportScreenState extends State<ReportScreen>
           ),
         ),
         const SizedBox(height: 10),
+        Text(
+          '1. Skema Insentif Value (Target Toko)',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+          ),
+        ),
+        const SizedBox(height: 6),
         _buildIncentiveTierLegend(isDark: isDark),
+        const SizedBox(height: 8),
+        Text(
+          '2. Skema Insentif Quantity (Lawrence & Sofa)',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        _buildQuantityIncentiveLegend(isDark: isDark),
         const SizedBox(height: 12),
         if (!_hasCurrentMonthHistory)
           Padding(
@@ -2284,11 +2530,16 @@ class _ReportScreenState extends State<ReportScreen>
             final row = rows[index];
             final double rate = row['rate'] as double;
             final double storePct = row['storePct'] as double;
-            final int incentiveRp = row['incentiveRp'] as int;
+            final int valueIncentiveRp = row['valueIncentiveRp'] as int;
+            final int qtyIncentiveRp = row['qtyIncentiveRp'] as int;
+            final int totalIncentiveRp = row['totalIncentiveRp'] as int;
             final int salesAmount = row['salesAmount'] as int;
             final int txCount = row['txCount'] as int;
-            final bool isPaid = rate > 0;
-            final Color rowAccent = isPaid ? const Color(0xFF10B981) : Colors.grey;
+            final int lawOs = row['lawOs'] as int;
+            final int lawNh = row['lawNh'] as int;
+            final int sofa = row['sofa'] as int;
+            final bool hasIncentive = totalIncentiveRp > 0;
+            final Color rowAccent = hasIncentive ? const Color(0xFF10B981) : Colors.grey;
 
             return Container(
               margin: EdgeInsets.only(bottom: index == rows.length - 1 ? 0 : 8),
@@ -2297,7 +2548,7 @@ class _ReportScreenState extends State<ReportScreen>
                 color: innerBg,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isPaid
+                  color: hasIncentive
                       ? const Color(0xFF10B981).withValues(alpha: 0.35)
                       : (isDark ? Colors.white12 : Colors.grey.shade200),
                 ),
@@ -2370,45 +2621,61 @@ class _ReportScreenState extends State<ReportScreen>
                     ],
                   ),
                   const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 5,
+                    runSpacing: 4,
+                    children: [
+                      _buildMiniQtyBadge(label: 'OS', count: lawOs, isDark: isDark),
+                      _buildMiniQtyBadge(label: 'NH', count: lawNh, isDark: isDark),
+                      _buildMiniQtyBadge(label: 'Sofa', count: sofa, isDark: isDark),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
                       color: Theme.of(context).cardColor,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    child: Column(
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Omset SPG',
-                              style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                              'Omset SPG: ${_formatRp(salesAmount)}',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.grey.shade300 : const Color(0xFF334155),
+                              ),
                             ),
                             Text(
-                              _formatRp(salesAmount),
+                              'Total: ${_formatRp(totalIncentiveRp)}',
                               style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                                color: isDark ? Colors.grey.shade200 : const Color(0xFF334155),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                                color: hasIncentive ? const Color(0xFF10B981) : Colors.grey,
                               ),
                             ),
                           ],
                         ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Estimasi Insentif',
-                              style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                              'Value: ${_formatRp(valueIncentiveRp)}',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: rate > 0 ? const Color(0xFF10B981) : Colors.grey,
+                              ),
                             ),
                             Text(
-                              _formatRp(incentiveRp),
+                              'Qty: ${_formatRp(qtyIncentiveRp)}',
                               style: TextStyle(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w800,
-                                color: isPaid ? const Color(0xFF10B981) : Colors.grey,
+                                fontSize: 10.5,
+                                color: qtyIncentiveRp > 0 ? const Color(0xFF3B82F6) : Colors.grey,
                               ),
                             ),
                           ],
@@ -5615,7 +5882,7 @@ class _ReportScreenState extends State<ReportScreen>
 class _AdminPinDialog extends StatefulWidget {
   final String correctPin;
 
-  const _AdminPinDialog({super.key, required this.correctPin});
+  const _AdminPinDialog({required this.correctPin});
 
   @override
   State<_AdminPinDialog> createState() => _AdminPinDialogState();
