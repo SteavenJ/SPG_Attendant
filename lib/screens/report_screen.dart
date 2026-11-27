@@ -29,6 +29,28 @@ class CurrencyInputFormatter extends TextInputFormatter {
   }
 }
 
+class DecimalQuantityInputFormatter extends TextInputFormatter {
+  final int decimalRange;
+
+  DecimalQuantityInputFormatter({this.decimalRange = 2});
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (newValue.text.isEmpty) {
+      return newValue;
+    }
+    // Izinkan angka desimal dengan tanda koma (,) atau titik (.), misal "0.5" atau "0,5"
+    final regex = RegExp(r'^\d*([.,]\d{0,' + decimalRange.toString() + r'})?$');
+    if (regex.hasMatch(newValue.text)) {
+      return newValue;
+    }
+    return oldValue;
+  }
+}
+
 enum MainView { penjualan, pencapaian }
 
 class ReportScreen extends StatefulWidget {
@@ -96,7 +118,7 @@ class _ReportScreenState extends State<ReportScreen>
   String? _historyError;
   int _historyTotalAmount = 0;
   int _historyTotalTransactions = 0;
-  int _historyFilteredProductUnits = 0;
+  num _historyFilteredProductUnits = 0;
   List<String> _availableStores = [];
   String? _selectedFilterStore;
   String? _selectedFilterDate;
@@ -120,7 +142,7 @@ class _ReportScreenState extends State<ReportScreen>
   int _prevRealizationAmount = 0;
   List<dynamic> _currentMonthSalesList = [];
   bool _hasCurrentMonthHistory = false;
-  Map<String, int> _monthlyQtySummary = {
+  Map<String, num> _monthlyQtySummary = {
     'lawOs': 0,
     'lawNh': 0,
     'superbed': 0,
@@ -130,7 +152,7 @@ class _ReportScreenState extends State<ReportScreen>
     'amount': 0,
     'txCount': 0,
   };
-  Map<String, int> _prevMonthMetrics = {
+  Map<String, num> _prevMonthMetrics = {
     'lawOs': 0,
     'lawNh': 0,
     'superbed': 0,
@@ -248,16 +270,16 @@ class _ReportScreenState extends State<ReportScreen>
   }
 
   /// Menghitung seluruh metrik performa (unit per produk, total omset, jumlah transaksi) untuk bulan tertentu.
-  Map<String, int> _calculatePeriodMetrics(
+  Map<String, num> _calculatePeriodMetrics(
     List<dynamic> rawList, {
     required String empId,
     required String targetMonth,
     required bool isAdmin,
   }) {
-    int lawOs = 0;
-    int lawNh = 0;
+    num lawOs = 0;
+    num lawNh = 0;
     int superbed = 0;
-    int sofa = 0;
+    num sofa = 0;
     int bedding = 0;
     int totalAmount = 0;
     int txCount = 0;
@@ -268,10 +290,10 @@ class _ReportScreenState extends State<ReportScreen>
 
       if (_isItemInMonth(itemMap, targetMonth) && (isAdmin || itemId == empId)) {
         txCount++;
-        lawOs += (itemMap['lawQtyOs'] as num?)?.toInt() ?? 0;
-        lawNh += (itemMap['lawQtyNh'] as num?)?.toInt() ?? 0;
+        lawOs += (itemMap['lawQtyOs'] as num?)?.toDouble() ?? 0.0;
+        lawNh += (itemMap['lawQtyNh'] as num?)?.toDouble() ?? 0.0;
         superbed += _countSoUnits(itemMap['sbNoSo']?.toString());
-        sofa += (itemMap['sofaQty'] as num?)?.toInt() ?? 0;
+        sofa += (itemMap['sofaQty'] as num?)?.toDouble() ?? 0.0;
         bedding += _countSoUnits(itemMap['bedNoSo']?.toString());
         totalAmount += _extractTxTotal(itemMap);
       }
@@ -355,12 +377,12 @@ class _ReportScreenState extends State<ReportScreen>
           if (data['qtySummary'] != null && data['qtySummary'] is Map) {
             final qMap = Map<String, dynamic>.from(data['qtySummary'] as Map);
             _monthlyQtySummary = {
-              'lawOs': (qMap['lawOs'] as num?)?.toInt() ?? 0,
-              'lawNh': (qMap['lawNh'] as num?)?.toInt() ?? 0,
+              'lawOs': (qMap['lawOs'] as num?)?.toDouble() ?? 0.0,
+              'lawNh': (qMap['lawNh'] as num?)?.toDouble() ?? 0.0,
               'superbed': (qMap['superbed'] as num?)?.toInt() ?? 0,
-              'sofa': (qMap['sofa'] as num?)?.toInt() ?? 0,
+              'sofa': (qMap['sofa'] as num?)?.toDouble() ?? 0.0,
               'bedding': (qMap['bedding'] as num?)?.toInt() ?? 0,
-              'total': (qMap['total'] as num?)?.toInt() ?? 0,
+              'total': (qMap['total'] as num?)?.toDouble() ?? 0.0,
               'amount': currFromHistory['amount'] ?? 0,
               'txCount': currFromHistory['txCount'] ?? 0,
             };
@@ -391,9 +413,9 @@ class _ReportScreenState extends State<ReportScreen>
             final prevPersonal = prevPencapaianData['personal'] as Map?;
             _prevRealizationAmount = (prevPersonal?['actual'] as num?)?.toInt() ??
                 (prevPencapaianData['totalActual'] as num?)?.toInt() ??
-                (_prevMonthMetrics['amount'] ?? 0);
+                (_prevMonthMetrics['amount']?.toInt() ?? 0);
           } else {
-            _prevRealizationAmount = _prevMonthMetrics['amount'] ?? 0;
+            _prevRealizationAmount = _prevMonthMetrics['amount']?.toInt() ?? 0;
           }
         } else {
           _pencapaianError = data?['message'] ?? 'Belum dapat terhubung ke data pencapaian.';
@@ -537,8 +559,8 @@ class _ReportScreenState extends State<ReportScreen>
     if (productKey == null || productKey == 'all') return true;
     switch (productKey) {
       case 'lawrence':
-        final os = (itemMap['lawQtyOs'] as num?)?.toInt() ?? 0;
-        final nh = (itemMap['lawQtyNh'] as num?)?.toInt() ?? 0;
+        final os = (itemMap['lawQtyOs'] as num?)?.toDouble() ?? 0.0;
+        final nh = (itemMap['lawQtyNh'] as num?)?.toDouble() ?? 0.0;
         final val = (itemMap['lawValue'] as num?)?.toInt() ?? 0;
         final so = itemMap['lawNoSo']?.toString().trim() ?? '';
         return os > 0 || nh > 0 || val > 0 || so.isNotEmpty;
@@ -547,7 +569,7 @@ class _ReportScreenState extends State<ReportScreen>
         final so = itemMap['sbNoSo']?.toString().trim() ?? '';
         return val > 0 || so.isNotEmpty;
       case 'sofa':
-        final qty = (itemMap['sofaQty'] as num?)?.toInt() ?? 0;
+        final qty = (itemMap['sofaQty'] as num?)?.toDouble() ?? 0.0;
         final val = (itemMap['sofaValue'] as num?)?.toInt() ?? 0;
         final so = itemMap['sofaNoSo']?.toString().trim() ?? '';
         return qty > 0 || val > 0 || so.isNotEmpty;
@@ -578,16 +600,16 @@ class _ReportScreenState extends State<ReportScreen>
     }
   }
 
-  int _getProductFilteredUnitCount(Map<String, dynamic> itemMap, String? productKey) {
+  num _getProductFilteredUnitCount(Map<String, dynamic> itemMap, String? productKey) {
     switch (productKey) {
       case 'lawrence':
-        final os = (itemMap['lawQtyOs'] as num?)?.toInt() ?? 0;
-        final nh = (itemMap['lawQtyNh'] as num?)?.toInt() ?? 0;
+        final os = (itemMap['lawQtyOs'] as num?)?.toDouble() ?? 0.0;
+        final nh = (itemMap['lawQtyNh'] as num?)?.toDouble() ?? 0.0;
         return os + nh;
       case 'superbed':
         return _countSoUnits(itemMap['sbNoSo']?.toString());
       case 'sofa':
-        return (itemMap['sofaQty'] as num?)?.toInt() ?? 0;
+        return (itemMap['sofaQty'] as num?)?.toDouble() ?? 0.0;
       case 'bedding':
         return _countSoUnits(itemMap['bedNoSo']?.toString());
       default:
@@ -605,12 +627,12 @@ class _ReportScreenState extends State<ReportScreen>
   String _getProductCardBreakdown(Map<String, dynamic> itemMap, String? productKey) {
     switch (productKey) {
       case 'lawrence':
-        final os = (itemMap['lawQtyOs'] as num?)?.toInt() ?? 0;
-        final nh = (itemMap['lawQtyNh'] as num?)?.toInt() ?? 0;
+        final os = (itemMap['lawQtyOs'] as num?)?.toDouble() ?? 0.0;
+        final nh = (itemMap['lawQtyNh'] as num?)?.toDouble() ?? 0.0;
         final so = itemMap['lawNoSo']?.toString().trim() ?? '';
         final parts = <String>[
-          if (os > 0) 'OS: $os',
-          if (nh > 0) 'NH: $nh',
+          if (os > 0) 'OS: ${_formatQty(os)}',
+          if (nh > 0) 'NH: ${_formatQty(nh)}',
           if (so.isNotEmpty) 'SO: $so',
         ];
         return parts.isEmpty ? 'Lawrence' : 'Lawrence (${parts.join(' • ')})';
@@ -618,10 +640,10 @@ class _ReportScreenState extends State<ReportScreen>
         final so = itemMap['sbNoSo']?.toString().trim() ?? '';
         return so.isNotEmpty ? 'Superbed • SO: $so' : 'Superbed';
       case 'sofa':
-        final qty = (itemMap['sofaQty'] as num?)?.toInt() ?? 0;
+        final qty = (itemMap['sofaQty'] as num?)?.toDouble() ?? 0.0;
         final so = itemMap['sofaNoSo']?.toString().trim() ?? '';
         final parts = <String>[
-          if (qty > 0) 'Qty: $qty',
+          if (qty > 0) 'Qty: ${_formatQty(qty)}',
           if (so.isNotEmpty) 'SO: $so',
         ];
         return parts.isEmpty ? 'Sofa' : 'Sofa (${parts.join(' • ')})';
@@ -640,7 +662,7 @@ class _ReportScreenState extends State<ReportScreen>
     }).toList();
 
     int calculatedTotal = 0;
-    int calculatedUnits = 0;
+    num calculatedUnits = 0;
     for (var item in filtered) {
       final itemMap = Map<String, dynamic>.from(item as Map);
       calculatedTotal += _getProductFilteredValue(itemMap, _selectedFilterProduct);
@@ -837,6 +859,24 @@ class _ReportScreenState extends State<ReportScreen>
     return clean.isEmpty ? 0 : int.parse(clean);
   }
 
+  num _parseQuantity(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return 0;
+    final normalized = trimmed.replaceAll(',', '.');
+    final val = double.tryParse(normalized) ?? 0.0;
+    if (val == val.roundToDouble()) {
+      return val.toInt();
+    }
+    return val;
+  }
+
+  String _formatQty(num qty) {
+    if (qty is int || qty == qty.roundToDouble()) {
+      return qty.toInt().toString();
+    }
+    return qty.toString().replaceAll(RegExp(r'\.?0+$'), '');
+  }
+
   void _resetFormFields() {
     _formKey.currentState?.reset();
     _dateController.text = DateFormat('yyyy-MM-dd').format(DateTime.now());
@@ -869,15 +909,15 @@ class _ReportScreenState extends State<ReportScreen>
       return;
     }
 
-    final lawQtyOs = _parseNumber(_lawQtyOsController.text);
-    final lawQtyNh = _parseNumber(_lawQtyNhController.text);
+    final lawQtyOs = _parseQuantity(_lawQtyOsController.text);
+    final lawQtyNh = _parseQuantity(_lawQtyNhController.text);
     final lawValue = _parseNumber(_lawValueController.text);
     final lawNoSo = _lawNoSoController.text.trim();
 
     final sbValue = _parseNumber(_sbValueController.text);
     final sbNoSo = _sbNoSoController.text.trim();
 
-    final sofaQty = _parseNumber(_sofaQtyController.text);
+    final sofaQty = _parseQuantity(_sofaQtyController.text);
     final sofaValue = _parseNumber(_sofaValueController.text);
     final sofaNoSo = _sofaNoSoController.text.trim();
 
@@ -1044,8 +1084,8 @@ class _ReportScreenState extends State<ReportScreen>
 
   /// Badge tren kompak (naik hijau / turun merah) untuk ditempel di samping nominal & qty.
   Widget _buildInlineTrendBadge({
-    required int current,
-    required int previous,
+    required num current,
+    required num previous,
     bool showPercentage = false,
     String? compareLabel,
     bool onHeroCard = false,
@@ -1054,7 +1094,7 @@ class _ReportScreenState extends State<ReportScreen>
       return const SizedBox.shrink();
     }
 
-    final int diff = current - previous;
+    final num diff = current - previous;
     final bool isUp = diff > 0;
     final bool isDown = diff < 0;
 
@@ -1087,13 +1127,13 @@ class _ReportScreenState extends State<ReportScreen>
     String text;
     if (showPercentage) {
       if (previous == 0 && current > 0) {
-        text = compareLabel != null ? 'Baru ($compareLabel)' : 'Baru (+$current)';
+        text = compareLabel != null ? 'Baru ($compareLabel)' : 'Baru (+${_formatQty(current)})';
       } else {
         final pct = ((current - previous) / previous) * 100;
         final sign = pct > 0 ? '+' : (pct < 0 ? '-' : '');
         text = '$sign${pct.abs().toStringAsFixed(1)}%';
         if (!onHeroCard) {
-          final diffStr = diff > 0 ? '+$diff' : '$diff';
+          final diffStr = diff > 0 ? '+${_formatQty(diff)}' : _formatQty(diff);
           text = '$text ($diffStr)';
         } else if (compareLabel != null) {
           text = '$text $compareLabel';
@@ -1103,7 +1143,7 @@ class _ReportScreenState extends State<ReportScreen>
       text = '=0';
     } else {
       final sign = diff > 0 ? '+' : '';
-      text = '$sign$diff';
+      text = '$sign${_formatQty(diff)}';
     }
 
     return Container(
@@ -1135,8 +1175,8 @@ class _ReportScreenState extends State<ReportScreen>
 
   /// Angka unit & badge tren kompak berdampingan (auto-wrap pada layar ekstra sempit).
   Widget _buildUnitWithTrend({
-    required int count,
-    required int prevCount,
+    required num count,
+    required num prevCount,
     required Color accentColor,
   }) {
     return Wrap(
@@ -1146,7 +1186,7 @@ class _ReportScreenState extends State<ReportScreen>
       runSpacing: 3,
       children: [
         Text(
-          count > 0 ? '$count Unit' : '- Unit',
+          count > 0 ? '${_formatQty(count)} Unit' : '- Unit',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: count > 0 ? accentColor : Colors.grey,
@@ -1162,8 +1202,8 @@ class _ReportScreenState extends State<ReportScreen>
 
   Widget _buildSingleBrandQtyBox({
     required String title,
-    required int count,
-    required int prevCount,
+    required num count,
+    required num prevCount,
     required Color accentColor,
     required bool isDark,
     String? incentiveBadge,
@@ -1258,8 +1298,8 @@ class _ReportScreenState extends State<ReportScreen>
 
   Widget _buildLawrenceSubColumn({
     required String label,
-    required int count,
-    required int prevCount,
+    required num count,
+    required num prevCount,
     required Color accentColor,
     required bool isDark,
     String? incentiveBadge,
@@ -1314,10 +1354,10 @@ class _ReportScreenState extends State<ReportScreen>
   }
 
   Widget _buildLawrenceQtyBox({
-    required int osCount,
-    required int prevOsCount,
-    required int nhCount,
-    required int prevNhCount,
+    required num osCount,
+    required num prevOsCount,
+    required num nhCount,
+    required num prevNhCount,
     required bool isDark,
   }) {
     const accentColor = Color(0xFFF59E0B);
@@ -1400,19 +1440,19 @@ class _ReportScreenState extends State<ReportScreen>
     required bool isAdmin,
     required String periode,
   }) {
-    final lawOs = _monthlyQtySummary['lawOs'] ?? 0;
-    final lawNh = _monthlyQtySummary['lawNh'] ?? 0;
-    final sbCount = _monthlyQtySummary['superbed'] ?? 0;
-    final sofaCount = _monthlyQtySummary['sofa'] ?? 0;
-    final bedCount = _monthlyQtySummary['bedding'] ?? 0;
-    final totalCount = _monthlyQtySummary['total'] ?? 0;
+    final num lawOs = _monthlyQtySummary['lawOs'] ?? 0;
+    final num lawNh = _monthlyQtySummary['lawNh'] ?? 0;
+    final num sbCount = _monthlyQtySummary['superbed'] ?? 0;
+    final num sofaCount = _monthlyQtySummary['sofa'] ?? 0;
+    final num bedCount = _monthlyQtySummary['bedding'] ?? 0;
+    final num totalCount = _monthlyQtySummary['total'] ?? 0;
 
-    final prevLawOs = _prevMonthMetrics['lawOs'] ?? 0;
-    final prevLawNh = _prevMonthMetrics['lawNh'] ?? 0;
-    final prevSb = _prevMonthMetrics['superbed'] ?? 0;
-    final prevSofa = _prevMonthMetrics['sofa'] ?? 0;
-    final prevBed = _prevMonthMetrics['bedding'] ?? 0;
-    final prevTotal = _prevMonthMetrics['total'] ?? 0;
+    final num prevLawOs = _prevMonthMetrics['lawOs'] ?? 0;
+    final num prevLawNh = _prevMonthMetrics['lawNh'] ?? 0;
+    final num prevSb = _prevMonthMetrics['superbed'] ?? 0;
+    final num prevSofa = _prevMonthMetrics['sofa'] ?? 0;
+    final num prevBed = _prevMonthMetrics['bedding'] ?? 0;
+    final num prevTotal = _prevMonthMetrics['total'] ?? 0;
 
     final now = DateTime.now();
     final prevPeriod = DateFormat('yyyy-MM').format(DateTime(now.year, now.month - 1, 1));
@@ -1615,9 +1655,9 @@ class _ReportScreenState extends State<ReportScreen>
                 // Footer Ringkasan Total Unit beserta Tren Naik/Turun & Total Insentif Qty
                 Builder(
                   builder: (context) {
-                    final int qtyIncentiveTotal = (lawOs * _incentiveOsPerPcs) +
+                    final int qtyIncentiveTotal = ((lawOs * _incentiveOsPerPcs) +
                         (lawNh * _incentiveNhPerPcs) +
-                        (sofaCount * _incentiveSofaPerPcs);
+                        (sofaCount * _incentiveSofaPerPcs)).round();
 
                     return Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1672,7 +1712,7 @@ class _ReportScreenState extends State<ReportScreen>
                                   ),
                                 ),
                                 child: Text(
-                                  '$totalCount Unit',
+                                  '${_formatQty(totalCount)} Unit',
                                   style: const TextStyle(
                                     color: Color(0xFF3B82F6),
                                     fontWeight: FontWeight.w800,
@@ -1759,16 +1799,19 @@ class _ReportScreenState extends State<ReportScreen>
         'empId': empId,
         'name': name,
         'txCount': 0,
-        'lawOs': 0,
-        'lawNh': 0,
-        'sofa': 0,
+        'lawOs': 0.0,
+        'lawNh': 0.0,
+        'sofa': 0.0,
         'salesByStore': <String, int>{},
         'storeDisplay': <String, String>{},
       });
       entry['txCount'] = (entry['txCount'] as int) + 1;
-      entry['lawOs'] = (entry['lawOs'] as int) + ((itemMap['lawQtyOs'] as num?)?.toInt() ?? 0);
-      entry['lawNh'] = (entry['lawNh'] as int) + ((itemMap['lawQtyNh'] as num?)?.toInt() ?? 0);
-      entry['sofa'] = (entry['sofa'] as int) + ((itemMap['sofaQty'] as num?)?.toInt() ?? 0);
+      entry['lawOs'] = ((entry['lawOs'] as num?)?.toDouble() ?? 0.0) +
+          ((itemMap['lawQtyOs'] as num?)?.toDouble() ?? 0.0);
+      entry['lawNh'] = ((entry['lawNh'] as num?)?.toDouble() ?? 0.0) +
+          ((itemMap['lawQtyNh'] as num?)?.toDouble() ?? 0.0);
+      entry['sofa'] = ((entry['sofa'] as num?)?.toDouble() ?? 0.0) +
+          ((itemMap['sofaQty'] as num?)?.toDouble() ?? 0.0);
 
       final salesByStore = entry['salesByStore'] as Map<String, int>;
       final storeDisplay = entry['storeDisplay'] as Map<String, String>;
@@ -1800,12 +1843,12 @@ class _ReportScreenState extends State<ReportScreen>
         valueIncentiveRp += (storeEntry.value * (rate / 100.0)).round();
       }
 
-      final int lawOs = (acc['lawOs'] as int?) ?? 0;
-      final int lawNh = (acc['lawNh'] as int?) ?? 0;
-      final int sofa = (acc['sofa'] as int?) ?? 0;
-      final int qtyIncentiveRp = (lawOs * _incentiveOsPerPcs) +
+      final num lawOs = (acc['lawOs'] as num?) ?? 0;
+      final num lawNh = (acc['lawNh'] as num?) ?? 0;
+      final num sofa = (acc['sofa'] as num?) ?? 0;
+      final int qtyIncentiveRp = ((lawOs * _incentiveOsPerPcs) +
           (lawNh * _incentiveNhPerPcs) +
-          (sofa * _incentiveSofaPerPcs);
+          (sofa * _incentiveSofaPerPcs)).round();
       final int totalIncentiveRp = valueIncentiveRp + qtyIncentiveRp;
 
       final primaryStoreInfo = storeMap[primaryStoreKey];
@@ -1939,7 +1982,7 @@ class _ReportScreenState extends State<ReportScreen>
 
   Widget _buildMiniQtyBadge({
     required String label,
-    required int count,
+    required num count,
     required bool isDark,
     Color? color,
   }) {
@@ -1955,7 +1998,7 @@ class _ReportScreenState extends State<ReportScreen>
         ),
       ),
       child: Text(
-        '$label: $count pcs',
+        '$label: ${_formatQty(count)} pcs',
         style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w700,
@@ -1979,12 +2022,12 @@ class _ReportScreenState extends State<ReportScreen>
         ? (storeActual / storeTarget) * 100.0
         : ((personal['percentage'] ?? personal['persentase'] ?? 0) as num).toDouble();
     final double personalRate = _getIncentiveRate(storePct);
-    final int lawOs = _monthlyQtySummary['lawOs'] ?? 0;
-    final int lawNh = _monthlyQtySummary['lawNh'] ?? 0;
-    final int sofa = _monthlyQtySummary['sofa'] ?? 0;
-    final int personalQtyIncentive = (lawOs * _incentiveOsPerPcs) +
+    final num lawOs = _monthlyQtySummary['lawOs'] ?? 0;
+    final num lawNh = _monthlyQtySummary['lawNh'] ?? 0;
+    final num sofa = _monthlyQtySummary['sofa'] ?? 0;
+    final int personalQtyIncentive = ((lawOs * _incentiveOsPerPcs) +
         (lawNh * _incentiveNhPerPcs) +
-        (sofa * _incentiveSofaPerPcs);
+        (sofa * _incentiveSofaPerPcs)).round();
     final bool hasPositiveIncentive = isAdmin || personalRate > 0 || personalQtyIncentive > 0;
     final Color borderAccent = hasPositiveIncentive ? const Color(0xFF10B981) : const Color(0xFF64748B);
     final List<Color> headerColors = hasPositiveIncentive
@@ -2100,16 +2143,16 @@ class _ReportScreenState extends State<ReportScreen>
     required double storePct,
     required double rate,
   }) {
-    final int spgSalesAmount = _monthlyQtySummary['amount'] ?? 0;
-    final int spgTxCount = _monthlyQtySummary['txCount'] ?? 0;
+    final int spgSalesAmount = _monthlyQtySummary['amount']?.toInt() ?? 0;
+    final int spgTxCount = _monthlyQtySummary['txCount']?.toInt() ?? 0;
     final int valueIncentiveRp = (spgSalesAmount * (rate / 100.0)).round();
 
-    final int lawOs = _monthlyQtySummary['lawOs'] ?? 0;
-    final int lawNh = _monthlyQtySummary['lawNh'] ?? 0;
-    final int sofa = _monthlyQtySummary['sofa'] ?? 0;
-    final int osIncentiveRp = lawOs * _incentiveOsPerPcs;
-    final int nhIncentiveRp = lawNh * _incentiveNhPerPcs;
-    final int sofaIncentiveRp = sofa * _incentiveSofaPerPcs;
+    final num lawOs = _monthlyQtySummary['lawOs'] ?? 0;
+    final num lawNh = _monthlyQtySummary['lawNh'] ?? 0;
+    final num sofa = _monthlyQtySummary['sofa'] ?? 0;
+    final int osIncentiveRp = (lawOs * _incentiveOsPerPcs).round();
+    final int nhIncentiveRp = (lawNh * _incentiveNhPerPcs).round();
+    final int sofaIncentiveRp = (sofa * _incentiveSofaPerPcs).round();
     final int qtyIncentiveRp = osIncentiveRp + nhIncentiveRp + sofaIncentiveRp;
     final int totalIncentiveRp = valueIncentiveRp + qtyIncentiveRp;
 
@@ -2351,7 +2394,7 @@ class _ReportScreenState extends State<ReportScreen>
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'OS: $lawOs pcs (${_formatRp(osIncentiveRp)})',
+                      'OS: ${_formatQty(lawOs)} pcs (${_formatRp(osIncentiveRp)})',
                       style: TextStyle(
                         fontSize: 10,
                         color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
@@ -2360,7 +2403,7 @@ class _ReportScreenState extends State<ReportScreen>
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      'NH: $lawNh pcs (${_formatRp(nhIncentiveRp)})',
+                      'NH: ${_formatQty(lawNh)} pcs (${_formatRp(nhIncentiveRp)})',
                       style: TextStyle(
                         fontSize: 10,
                         color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
@@ -2369,7 +2412,7 @@ class _ReportScreenState extends State<ReportScreen>
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      'Sofa: $sofa pcs (${_formatRp(sofaIncentiveRp)})',
+                      'Sofa: ${_formatQty(sofa)} pcs (${_formatRp(sofaIncentiveRp)})',
                       style: TextStyle(
                         fontSize: 10,
                         color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
@@ -2619,9 +2662,9 @@ class _ReportScreenState extends State<ReportScreen>
             final int totalIncentiveRp = row['totalIncentiveRp'] as int;
             final int salesAmount = row['salesAmount'] as int;
             final int txCount = row['txCount'] as int;
-            final int lawOs = row['lawOs'] as int;
-            final int lawNh = row['lawNh'] as int;
-            final int sofa = row['sofa'] as int;
+            final num lawOs = (row['lawOs'] as num?) ?? 0;
+            final num lawNh = (row['lawNh'] as num?) ?? 0;
+            final num sofa = (row['sofa'] as num?) ?? 0;
             final bool hasIncentive = totalIncentiveRp > 0;
             final Color rowAccent = hasIncentive ? const Color(0xFF10B981) : Colors.grey;
 
@@ -4166,10 +4209,10 @@ class _ReportScreenState extends State<ReportScreen>
                     title: '🛏️ Lawrence',
                     value: (item['lawValue'] as num?)?.toInt() ?? 0,
                     details: [
-                      if (((item['lawQtyOs'] as num?)?.toInt() ?? 0) > 0)
-                        'Qty OS: ${item['lawQtyOs']}',
-                      if (((item['lawQtyNh'] as num?)?.toInt() ?? 0) > 0)
-                        'Qty NH: ${item['lawQtyNh']}',
+                      if (((item['lawQtyOs'] as num?)?.toDouble() ?? 0) > 0)
+                        'Qty OS: ${_formatQty((item['lawQtyOs'] as num?) ?? 0)}',
+                      if (((item['lawQtyNh'] as num?)?.toDouble() ?? 0) > 0)
+                        'Qty NH: ${_formatQty((item['lawQtyNh'] as num?) ?? 0)}',
                       if ((item['lawNoSo']?.toString().trim().isNotEmpty ?? false))
                         'No SO: ${item['lawNoSo']}',
                     ],
@@ -4190,8 +4233,8 @@ class _ReportScreenState extends State<ReportScreen>
                     title: '🛋️ Sofa',
                     value: (item['sofaValue'] as num?)?.toInt() ?? 0,
                     details: [
-                      if (((item['sofaQty'] as num?)?.toInt() ?? 0) > 0)
-                        'Qty: ${item['sofaQty']}',
+                      if (((item['sofaQty'] as num?)?.toDouble() ?? 0) > 0)
+                        'Qty: ${_formatQty((item['sofaQty'] as num?) ?? 0)}',
                       if ((item['sofaNoSo']?.toString().trim().isNotEmpty ?? false))
                         'No SO: ${item['sofaNoSo']}',
                     ],
@@ -4311,10 +4354,14 @@ class _ReportScreenState extends State<ReportScreen>
 
     // Controller dan Inisialisasi data
     final lawQtyOsController = TextEditingController(
-      text: (item['lawQtyOs'] ?? 0).toString() == '0' ? '' : (item['lawQtyOs'] ?? '').toString(),
+      text: ((item['lawQtyOs'] as num?)?.toDouble() ?? 0.0) == 0.0
+          ? ''
+          : _formatQty((item['lawQtyOs'] as num?) ?? 0),
     );
     final lawQtyNhController = TextEditingController(
-      text: (item['lawQtyNh'] ?? 0).toString() == '0' ? '' : (item['lawQtyNh'] ?? '').toString(),
+      text: ((item['lawQtyNh'] as num?)?.toDouble() ?? 0.0) == 0.0
+          ? ''
+          : _formatQty((item['lawQtyNh'] as num?) ?? 0),
     );
     final lawValController = TextEditingController(
       text: ((item['lawValue'] as num?)?.toInt() ?? 0) > 0 ? _formatCurrency(item['lawValue']) : '',
@@ -4327,7 +4374,9 @@ class _ReportScreenState extends State<ReportScreen>
     final sbNoSoController = TextEditingController(text: item['sbNoSo']?.toString() ?? '');
 
     final sofaQtyController = TextEditingController(
-      text: (item['sofaQty'] ?? 0).toString() == '0' ? '' : (item['sofaQty'] ?? '').toString(),
+      text: ((item['sofaQty'] as num?)?.toDouble() ?? 0.0) == 0.0
+          ? ''
+          : _formatQty((item['sofaQty'] as num?) ?? 0),
     );
     final sofaValController = TextEditingController(
       text: ((item['sofaValue'] as num?)?.toInt() ?? 0) > 0 ? _formatCurrency(item['sofaValue']) : '',
@@ -4474,8 +4523,8 @@ class _ReportScreenState extends State<ReportScreen>
                                   child: _buildField(
                                     controller: lawQtyOsController,
                                     label: 'QTY OS',
-                                    keyboardType: TextInputType.number,
-                                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    inputFormatters: [DecimalQuantityInputFormatter()],
                                   ),
                                 ),
                                 const SizedBox(width: 12),
@@ -4483,8 +4532,8 @@ class _ReportScreenState extends State<ReportScreen>
                                   child: _buildField(
                                     controller: lawQtyNhController,
                                     label: 'QTY NH',
-                                    keyboardType: TextInputType.number,
-                                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    inputFormatters: [DecimalQuantityInputFormatter()],
                                   ),
                                 ),
                               ],
@@ -4534,8 +4583,8 @@ class _ReportScreenState extends State<ReportScreen>
                             _buildField(
                               controller: sofaQtyController,
                               label: 'QTY SOFA',
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              inputFormatters: [DecimalQuantityInputFormatter()],
                             ),
                             _buildField(
                               controller: sofaValController,
@@ -4637,13 +4686,13 @@ class _ReportScreenState extends State<ReportScreen>
                                           'employeeId': empId,
                                           'timestamp': timestamp,
                                           'tanggal': fixedDate,
-                                          'lawQtyOs': int.tryParse(lawQtyOsController.text.trim()) ?? 0,
-                                          'lawQtyNh': int.tryParse(lawQtyNhController.text.trim()) ?? 0,
+                                          'lawQtyOs': _parseQuantity(lawQtyOsController.text),
+                                          'lawQtyNh': _parseQuantity(lawQtyNhController.text),
                                           'lawValue': parseVal(lawValController),
                                           'lawNoSo': lawNoSoController.text.trim(),
                                           'sbValue': parseVal(sbValController),
                                           'sbNoSo': sbNoSoController.text.trim(),
-                                          'sofaQty': int.tryParse(sofaQtyController.text.trim()) ?? 0,
+                                          'sofaQty': _parseQuantity(sofaQtyController.text),
                                           'sofaValue': parseVal(sofaValController),
                                           'sofaNoSo': sofaNoSoController.text.trim(),
                                           'bedValue': parseVal(bedValController),
@@ -5410,7 +5459,7 @@ class _ReportScreenState extends State<ReportScreen>
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
-                                    '$productShort: $_historyFilteredProductUnits Unit',
+                                    '$productShort: ${_formatQty(_historyFilteredProductUnits)} Unit',
                                     style: TextStyle(
                                       fontSize: 10.5,
                                       fontWeight: FontWeight.bold,
@@ -5734,8 +5783,8 @@ class _ReportScreenState extends State<ReportScreen>
                                     child: _buildField(
                                       controller: _lawQtyOsController,
                                       label: 'QTY OS',
-                                      keyboardType: TextInputType.number,
-                                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                      inputFormatters: [DecimalQuantityInputFormatter()],
                                     ),
                                   ),
                                   const SizedBox(width: 12),
@@ -5743,8 +5792,8 @@ class _ReportScreenState extends State<ReportScreen>
                                     child: _buildField(
                                       controller: _lawQtyNhController,
                                       label: 'QTY NH',
-                                      keyboardType: TextInputType.number,
-                                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                      inputFormatters: [DecimalQuantityInputFormatter()],
                                     ),
                                   ),
                                 ],
@@ -5796,8 +5845,8 @@ class _ReportScreenState extends State<ReportScreen>
                                     child: _buildField(
                                       controller: _sofaQtyController,
                                       label: 'QTY',
-                                      keyboardType: TextInputType.number,
-                                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                      inputFormatters: [DecimalQuantityInputFormatter()],
                                     ),
                                   ),
                                   const SizedBox(width: 12),
